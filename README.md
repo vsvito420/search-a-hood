@@ -115,7 +115,18 @@ node bin/search-a-hood.mjs modules     # alle Module mit Defaults
 node bin/search-a-hood.mjs presets
 ```
 
-Optionen: `--preset/-p`, `--modules/-m a,b,c`, `--set/-s modul.key=wert` (mehrfach), `--goal/-g "Name|Adresse|bike/transit/foot/car|Minuten"` (mehrfach), `--arrive hh:mm`, `--walk/-w`, `--time/-t ISO`, `--json`, `--overpass URL` (oder `OVERPASS_URL`). Hinter einem HTTP-Proxy setzt du `NODE_USE_ENV_PROXY=1`.
+### Watchlist als GitHub Action
+
+`watchlist.example.txt` nach `watchlist.txt` kopieren und mit Inseraten füllen (`Adresse | Miete | m² | Link`). Dann unter **Actions → Watchlist → Run workflow** starten. Das Ranking landet als Tabelle in der Job-Zusammenfassung:
+
+| # | Adresse | Score | € | €/m² | 24/7 Tankstelle | Späti / Kiosk | Supermarkt | S-/U-Bahn | 🚆 Arbeit |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | Oranienstraße 185, Kreuzberg | **100 %** | 1150 | 18.5 | ✅ 205 m | ✅ 191 m | ✅ 60 m | ✅ 163 m | ✅ 18 min |
+| 4 | Schillerpromenade 20, Neukölln | **81 %** | 890 | 15.3 | ⚠️ 1.3 km | ✅ 229 m | ✅ 313 m | ✅ 368 m | ⚠️ 29 min |
+
+Lokal geht das genauso: `node bin/search-a-hood.mjs score --file watchlist.txt -p nachteule --format md`.
+
+Optionen: `--preset/-p`, `--modules/-m a,b,c`, `--set/-s modul.key=wert` (mehrfach), `--goal/-g "Name|Adresse|bike/transit/foot/car|Minuten"` (mehrfach), `--arrive hh:mm`, `--walk/-w`, `--time/-t ISO`, `--file/-f`, `--format text|json|md`, `--json`, `--overpass URL` (oder `OVERPASS_URL`). Hinter einem HTTP-Proxy setzt du `NODE_USE_ENV_PROXY=1`.
 
 ---
 

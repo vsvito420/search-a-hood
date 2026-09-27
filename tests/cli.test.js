@@ -19,3 +19,13 @@ test('CLI: Fehler werden sauber gemeldet (ohne Netz)', () => {
   r = cli('frobnicate');
   assert.match(r.stderr, /Unbekannter Befehl/);
 });
+
+test('CLI: --file und --format werden geprüft (ohne Netz)', () => {
+  let r = cli('score', '--file', 'gibt-es-nicht.txt');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /ENOENT|gibt-es-nicht/);
+  r = cli('score', '52.5,13.4', '--format', 'xml', '-m', 'spaeti');
+  assert.match(r.stderr, /Unbekanntes Format/);
+  r = cli('score', '52.5,13.4', '-g', 'kaputt');
+  assert.match(r.stderr, /Ungültiges --goal/);
+});

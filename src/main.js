@@ -2,7 +2,7 @@
 import { BUILTIN_MODULES, customModule, targetModule } from './modules/index.js';
 import { PRESETS } from './presets.js';
 import { store } from './app/store.js';
-import { encodeState, decodeState } from './app/permalink.js';
+import { encodeState, decodeState, sanitize } from './app/permalink.js';
 import { SpatialIndex } from './core/spatial-index.js';
 import { elementsToPoints, runQuery, setEndpoints } from './core/overpass.js';
 import { DataStore, bboxKey } from './core/datastore.js';
@@ -33,8 +33,9 @@ const MAX_WALK_AREA_KM2 = 30;
 // Zustand
 // =====================================================================
 const state = {
-  customDefs: store.get('custom', []),
-  targets: store.get('targets', []), // persönliche Ziele (Pendeln)
+  // auch localStorage kann Altlasten enthalten → gleiche Prüfung wie für Permalinks
+  customDefs: sanitize({ customDefs: store.get('custom', []) }).customDefs,
+  targets: sanitize({ targets: store.get('targets', []) }).targets, // persönliche Ziele (Pendeln)
   modules: [],
   settings: {},
   time: new Date(),
@@ -46,7 +47,7 @@ const state = {
   counts: {},
   lastResult: null,
   lastClick: null,
-  candidates: store.get('candidates', []),
+  candidates: sanitize({ candidates: store.get('candidates', []) }).candidates,
   candSort: { key: 'score', dir: -1 },
   focusModule: null, // Heatmap nur für ein Kriterium
   relative: store.get('relative', false),
@@ -89,6 +90,7 @@ const dataModules = () => enabledModules().filter((m) => m.kind !== 'target');
 // Karte
 // =====================================================================
 const view = fromLink?.view || store.get('view', { center: [52.52, 13.405], zoom: 14 });
+if (!Array.isArray(view.center) && view.center) view.center = [view.center.lat, view.center.lng];
 const map = L.map('map', { preferCanvas: true, zoomControl: true }).setView(view.center, view.zoom);
 const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
@@ -209,7 +211,8 @@ function applyModuleFilter() {
 moduleFilter.addEventListener('input', applyModuleFilter);
 
 function applyPreset(preset) {
-  for (const m of state.modules) state.settings[m.id] = { ...m.defaults, enabled: false };
+  // Persönliche Ziele (Pendeln) bleiben, wie sie sind – Presets betreffen nur die Lage-Kriterien
+  for (const m of state.modules) if (m.kind !== 'target') state.settings[m.id] = { ...m.defaults, enabled: false };
   for (const [id, patch] of Object.entries(preset.modules)) {
     if (state.settings[id]) Object.assign(state.settings[id], patch);
   }
@@ -223,7 +226,7 @@ function applyPreset(preset) {
 renderPresets($('#presets'), PRESETS, applyPreset);
 
 $('#reset-btn').addEventListener('click', () => {
-  for (const m of state.modules) state.settings[m.id] = { ...m.defaults };
+  for (const m of state.modules) if (m.kind !== 'target') state.settings[m.id] = { ...m.defaults };
   saveSettings();
   refreshPanel();
   onSettingsChanged();
@@ -336,12 +339,15 @@ function fetchMissing() {
   return queue;
 }
 
-/** Lädt das Fußwegenetz für `bbox` (Standard: das Analyse-Gebiet inkl. Rand). */
-async function ensureGraph(bbox = state.data.bbox) {
+/**
+ * Lädt das Fußwegenetz für `bbox` in einen Slot: 'graph' = Analyse-Gebiet (inkl. Rand),
+ * 'isoGraph' = kleines Gebiet für eine Isochrone außerhalb – damit die Analyse ihr Netz behält.
+ */
+async function ensureGraph(bbox = state.data.bbox, slot = 'graph') {
   const key = bboxKey(bbox);
-  if (state.graph?.key === key && state.graph.graph) return;
+  if (state[slot]?.key === key && state[slot].graph) return;
   if (bboxAreaKm2(bbox) > MAX_WALK_AREA_KM2) {
-    state.graph = { key, error: `Gebiet zu groß für Fußweg-Routing (max. ${MAX_WALK_AREA_KM2} km² inkl. Rand)` };
+    state[slot] = { key, error: `Gebiet zu groß für Fußweg-Routing (max. ${MAX_WALK_AREA_KM2} km² inkl. Rand)` };
     return;
   }
   setStatus('Lade Fußwegenetz …');
@@ -349,9 +355,9 @@ async function ensureGraph(bbox = state.data.bbox) {
     const t0 = performance.now();
     const els = await runQuery(buildWalkQuery(bbox), { timeoutMs: 120_000 });
     const graph = new WalkGraph(els);
-    state.graph = { key, bbox, graph, ms: Math.round(performance.now() - t0) };
+    state[slot] = { key, bbox, graph, ms: Math.round(performance.now() - t0) };
   } catch (e) {
-    state.graph = { key, error: e.message };
+    state[slot] = { key, error: e.message };
   }
 }
 
@@ -368,11 +374,14 @@ function nextWorkday(hhmm = '08:30') {
   return d;
 }
 
+/** ÖPNV-Suchhorizont in 30-min-Stufen – sonst löst jeder Slider-Schritt eine neue Anfrage aus. */
+const transitHorizon = (minutes) => Math.min(90, Math.ceil((minutes * 2) / 30) * 30);
+
 function commuteKey(m) {
   const t = m.target;
   const s = state.settings[m.id];
   const base = `${t.id}|${t.mode}|${t.lat.toFixed(5)},${t.lon.toFixed(5)}`;
-  return t.mode === 'transit' ? `${base}|${t.arrive || '08:30'}|${Math.min(90, s.distance * 2)}` : `${base}|${bboxKey(state.bbox)}`;
+  return t.mode === 'transit' ? `${base}|${t.arrive || '08:30'}|${transitHorizon(s.distance)}` : `${base}|${bboxKey(state.bbox)}`;
 }
 
 async function ensureCommutes() {
@@ -385,7 +394,7 @@ async function ensureCommutes() {
     try {
       const field =
         t.mode === 'transit'
-          ? await transitField(t, { time: nextWorkday(t.arrive), maxMinutes: state.settings[m.id].distance * 2 })
+          ? await transitField(t, { time: nextWorkday(t.arrive), maxMinutes: transitHorizon(state.settings[m.id].distance) })
           : await osrmField(t.mode, t, state.bbox);
       commuteCache.set(key, { field });
     } catch (e) {
@@ -581,7 +590,7 @@ function rebuild() {
   const pct = Math.round(res.coverage * 100);
   const walk =
     state.distMode === 'walk'
-      ? state.graph?.graph
+      ? state.graph?.graph && state.graph.key === state.data.key
         ? ` · 🚶 Fußwege (${state.graph.graph.n.toLocaleString('de')} Knoten)`
         : ` · ⚠ Fußwege nicht verfügbar (${state.graph?.error || '?'}) – Luftlinie`
       : '';
@@ -685,8 +694,9 @@ async function showReport(latlng) {
     return;
   }
   const r = evaluate(latlng.lat, latlng.lng);
-  const outside = !inBbox(state.data.bbox, latlng.lat, latlng.lng);
-  const html = `${reportPopup(r, latlng, { walk: state.distMode === 'walk' && !!state.graph?.graph })}
+  const outside = !inBbox(state.bbox, latlng.lat, latlng.lng);
+  const walkActive = state.distMode === 'walk' && !!state.graph?.graph && state.graph.key === state.data.key;
+  const html = `${reportPopup(r, latlng, { walk: walkActive })}
     ${outside ? '<p class="bad"><small>Außerhalb des analysierten Gebiets – Werte unzuverlässig.</small></p>' : ''}
     <div class="popup-actions">
       <button type="button" data-act="iso">⏱ Isochrone</button>
@@ -705,7 +715,7 @@ async function showReport(latlng) {
   el.querySelector('[data-act="report"]').addEventListener('click', () => {
     const cand = state.candidates.find((c) => c.lat != null && Math.abs(c.lat - latlng.lat) < 1e-6 && Math.abs(c.lon - latlng.lng) < 1e-6);
     const place = cand ? { ...cand, label: cand.display || cand.label } : { label: `${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}`, lat: latlng.lat, lon: latlng.lng };
-    openReport(buildReportHtml(place, r, state.layers, { time: state.time, distMode: state.graph?.graph && state.distMode === 'walk' ? 'walk' : 'air' }));
+    openReport(buildReportHtml(place, r, state.layers, { time: state.time, distMode: walkActive ? 'walk' : 'air' }));
   });
   // WMS-GetFeatureInfo (z. B. Breitbandatlas) asynchron nachladen
   const infos = await overlays.featureInfo(latlng);
@@ -723,11 +733,18 @@ async function drawIsochrone(latlng = state.lastClick) {
   map.closePopup();
   // Vorhandenes Netz nutzen, wenn der Punkt mit 15-min-Radius hineinpasst, sonst kleines Gebiet um den Punkt laden.
   const around = padBbox({ south: latlng.lat, west: latlng.lng, north: latlng.lat, east: latlng.lng }, 1300);
-  const cur = state.graph?.graph && state.graph.bbox;
-  const fits = cur && around.south >= cur.south && around.north <= cur.north && around.west >= cur.west && around.east <= cur.east;
-  if (!fits) await ensureGraph(around);
-  const g = state.graph?.graph;
-  if (!g) return setStatus(`Fußwegenetz nicht verfügbar: ${state.graph?.error}`, true);
+  const contains = (slot) => {
+    const b = state[slot]?.graph && state[slot].bbox;
+    return b && around.south >= b.south && around.north <= b.north && around.west >= b.west && around.east <= b.east;
+  };
+  let slot = contains('graph') ? 'graph' : contains('isoGraph') ? 'isoGraph' : null;
+  if (!slot) {
+    setStatus('Lade Fußwegenetz für die Isochrone …');
+    await ensureGraph(around, 'isoGraph');
+    slot = 'isoGraph';
+  }
+  const g = state[slot]?.graph;
+  if (!g) return setStatus(`Fußwegenetz nicht verfügbar: ${state[slot]?.error}`, true);
   const iso = isochrone(g, latlng.lat, latlng.lng, 15);
   if (!iso) return setStatus('Kein Weg in der Nähe des Punktes.', true);
   isoLayer?.remove();
@@ -737,10 +754,13 @@ async function drawIsochrone(latlng = state.lastClick) {
     [10, '#fdd835'],
     [15, '#d7301f'],
   ];
+  // Eine Multi-Polylinie pro Band statt zehntausender Einzel-Layer
+  const lines = bands.map(() => []);
   for (const s of iso.segments) {
-    const color = bands.find(([m]) => s.min <= m)?.[1] || '#d7301f';
-    L.polyline([s.a, s.b], { color, weight: 3, opacity: 0.85, interactive: false }).addTo(isoLayer);
+    const i = bands.findIndex(([m]) => s.min <= m);
+    lines[i < 0 ? bands.length - 1 : i].push([s.a, s.b]);
   }
+  bands.forEach(([, color], i) => lines[i].length && L.polyline(lines[i], { color, weight: 3, opacity: 0.85, interactive: false }).addTo(isoLayer));
   L.circleMarker(latlng, { radius: 7, color: '#000', weight: 2, fillColor: '#fff', fillOpacity: 1 })
     .bindTooltip('Start · Klick = Isochrone entfernen')
     .on('click', () => isoLayer.remove())
@@ -901,17 +921,18 @@ $('#config-import').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
   try {
-    const cfg = JSON.parse(await file.text());
-    state.customDefs = cfg.customDefs || [];
+    const raw = JSON.parse(await file.text());
+    const cfg = sanitize(raw);
+    state.customDefs = cfg.customDefs;
     store.set('custom', state.customDefs);
-    state.targets = cfg.targets || [];
+    state.targets = cfg.targets;
     store.set('targets', state.targets);
     drawTargets();
     state.settings = {};
-    store.set('settings', cfg.settings || {});
+    store.set('settings', cfg.settings);
     loadModules();
-    if (cfg.candidates) (state.candidates = cfg.candidates), saveCandidates();
-    if (cfg.distMode) setDistMode(cfg.distMode);
+    if (cfg.candidates.length) (state.candidates = cfg.candidates), saveCandidates();
+    setDistMode(raw.distMode === 'walk' ? 'walk' : 'air');
     refreshPanel();
     onSettingsChanged();
     setStatus('Konfiguration geladen.');

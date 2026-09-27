@@ -77,3 +77,27 @@ test('shortAddress baut kompakte Adresse', async () => {
   );
   assert.equal(shortAddress({ display_name: 'Nur Name' }), 'Nur Name');
 });
+
+test('Permalink/Config: manipulierte Daten werden verworfen statt die App zu crashen', async () => {
+  const { sanitize } = await import('../src/app/permalink.js');
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const evil = {
+    v: 1,
+    c: [52.5, 13.4, 15],
+    m: { spaeti: { de: 300, xx: 'böse', ed: { nested: 1 } } },
+    x: [{ id: 'c1', name: 'kaputt', query: ['amenity=fuel'] }, { id: 'c2', name: 'ok', query: ['[shop=bakery]'], color: 'red;background:url(x)' }],
+    g: [['t', 'X', 'nan', 13, 'bike', 20], ['t2', 'Arbeit', 52.5, 13.4, 'teleport', 20], ['t3', 'Uni', 52.5, 13.3, 'bike', 9999, 'x']],
+    k: [['<img src=x onerror=alert(1)>', 52.5, 13.4, null, null, 'javascript:alert(1)'], 'kein array'],
+    d: 'hyperspace',
+    t: 'gestern',
+  };
+  const dec = decodeState(`#s=${b64(evil)}`, BUILTIN_MODULES);
+  assert.deepEqual(dec.settings.spaeti, { distance: 300 });
+  assert.deepEqual(dec.customDefs.map((d) => d.id), ['c2']);
+  assert.equal(dec.customDefs[0].color, '#34495e');
+  assert.deepEqual(dec.targets.map((t) => [t.id, t.minutes, t.arrive]), [['t3', 180, '08:30']]);
+  assert.equal(dec.candidates.length, 1, 'Label wird später escaped, URL später gefiltert');
+  assert.equal(dec.distMode, 'air');
+  assert.equal(dec.time, null);
+  assert.deepEqual(sanitize({ customDefs: 'x', targets: null, candidates: 5 }), { customDefs: [], targets: [], candidates: [], settings: {} });
+});

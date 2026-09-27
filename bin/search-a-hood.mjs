@@ -8,6 +8,7 @@
 // Hinter einem HTTP-Proxy: NODE_USE_ENV_PROXY=1 setzen (Node ≥ 22.21).
 
 import { parseArgs } from 'node:util';
+import { readFileSync } from 'node:fs';
 import { BUILTIN_MODULES, targetModule } from '../src/modules/index.js';
 import { PRESETS } from '../src/presets.js';
 import { DataStore } from '../src/core/datastore.js';
@@ -18,7 +19,7 @@ import { elementsToPoints } from '../src/core/overpass.js';
 import { padBbox } from '../src/core/geo.js';
 import { isOpenAt } from '../src/core/hours.js';
 import { WalkGraph, NetworkField, buildWalkQuery, WALK_SPEED_M_PER_MIN } from '../src/core/routing.js';
-import { createGeocoder } from '../src/core/candidates.js';
+import { createGeocoder, parseCandidateLines, pricePerSqm } from '../src/core/candidates.js';
 import { scoreColor } from '../src/core/scoring.js';
 import { osrmField, transitField, CommuteIndex, COMMUTE_MODES } from '../src/core/commute.js';
 
@@ -60,7 +61,9 @@ ${bold('Optionen für score')}
       --arrive <hh:mm>            Ankunft am Ziel für ÖPNV (Standard 08:30, nächster Werktag)
   -w, --walk                      Echte Fußwege statt Luftlinie (lädt das Wegenetz)
   -t, --time <ISO>                Zeitpunkt für „nur geöffnet“ (Standard: jetzt)
-      --json                      Maschinenlesbare Ausgabe
+  -f, --file <datei>              Kandidaten aus Datei: je Zeile „Adresse | Miete | m² | Link“ (# = Kommentar)
+      --format <text|json|md>     Ausgabeformat (md = Markdown-Tabelle, z. B. für GitHub-Job-Summaries)
+      --json                      Kurzform für --format json
       --overpass <url>            Eigene Overpass-Instanz (auch via OVERPASS_URL)
   -h, --help
 
@@ -99,6 +102,12 @@ function resolveSettings({ preset, modules, set }) {
 }
 
 async function locate(q, geocode) {
+  if (typeof q === 'object') {
+    if (q.lat != null) return { ...q };
+    const hit = await geocode(q.query);
+    if (!hit) throw new Error(`Adresse nicht gefunden: ${q.query}`);
+    return { ...q, lat: hit.lat, lon: hit.lon, display: hit.display };
+  }
   const m = q.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
   if (m) return { label: q, lat: +m[1], lon: +m[2] };
   const hit = await geocode(q);
@@ -115,6 +124,9 @@ async function score(places, opts) {
     return { id: `g${i}`, name, addr, mode, minutes: +minutes, arrive: opts.arrive || '08:30' };
   });
   if (!mods.length && !goals.length) throw new Error('Keine Module aktiv. --preset, --modules oder --goal angeben.');
+  const format = opts.json ? 'json' : opts.format || 'text';
+  if (!['text', 'json', 'md'].includes(format)) throw new Error(`Unbekanntes Format „${format}“ (text, json, md)`);
+  opts.json = format !== 'text'; // Fortschrittsmeldungen nur im Textmodus
   const time = opts.time ? new Date(opts.time) : new Date();
   if (Number.isNaN(time.getTime())) throw new Error(`Ungültige Zeit: ${opts.time}`);
   const log = (msg) => !opts.json && process.stderr.write(dim(`${msg}\n`));
@@ -122,9 +134,15 @@ async function score(places, opts) {
   const geocode = createGeocoder({ fetchImpl: uaFetch });
   const points = [];
   for (const q of places) {
-    log(`📍 ${q}`);
-    points.push(await locate(q, geocode));
+    log(`📍 ${typeof q === 'object' ? q.label : q}`);
+    try {
+      points.push(await locate(q, geocode));
+    } catch (e) {
+      if (places.length === 1) throw e;
+      process.stderr.write(c('33', `   ⚠ ${e.message} – übersprungen\n`));
+    }
   }
+  if (!points.length) throw new Error('Keine Adresse gefunden.');
 
   for (const g of goals) {
     log(`🎯 ${g.name}: ${g.addr}`);
@@ -199,7 +217,35 @@ async function score(places, opts) {
   const results = points.map((p) => ({ ...p, ...evaluatePoint(p.lat, p.lon, layers) }));
   results.sort((a, b) => (b.rank ?? -1) - (a.rank ?? -1));
 
-  if (opts.json) {
+  if (format === 'md') {
+    const esc = (v) => String(v ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
+    const cols = layers.map((l) => l.module);
+    const lines = [
+      `### search-a-hood · ${time.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })} · ${graph ? 'Fußwege' : 'Luftlinie'}${opts.preset ? ` · Preset \`${opts.preset}\`` : ''}`,
+      '',
+      `| # | Adresse | Score | € | €/m² | ${cols.map((m) => esc(m.name)).join(' | ')} |`,
+      `|---|---|---|---:|---:|${cols.map(() => '---:').join('|')}|`,
+    ];
+    results.forEach((r, i) => {
+      const byId = new Map(r.parts.map((p) => [p.module.id, p]));
+      const name = esc(r.display || r.label);
+      const link = r.url && /^https?:\/\//.test(r.url) ? `[${name}](${r.url})` : name;
+      const ppsqm = pricePerSqm(r);
+      const cells = cols.map((m) => {
+        const p = byId.get(m.id);
+        if (!p) return '–';
+        const v = !p.hit ? (p.settings.mode === 'far' ? 'weit' : '–') : m.unit === 'min' ? `${Math.round(p.dist)} min` : fmtDist(p.dist);
+        return `${p.satisfied ? '✅' : p.required ? '❌' : '⚠️'} ${v}`;
+      });
+      lines.push(`| ${i + 1} | ${link} | **${r.score == null ? 'raus' : Math.round(r.score * 100) + ' %'}** | ${r.rent ?? ''} | ${ppsqm ? ppsqm.toFixed(1) : ''} | ${cells.join(' | ')} |`);
+    });
+    if (errors.length) lines.push('', ...errors.map((e) => `> ⚠️ nicht geladen: \`${e.module}\` – ${esc(e.error)}`));
+    lines.push('', '<sub>Daten © OpenStreetMap-Mitwirkende (ODbL)</sub>');
+    process.stdout.write(lines.join('\n') + '\n');
+    return;
+  }
+
+  if (format === 'json') {
     const out = {
       time: time.toISOString(),
       distance: graph ? 'walk' : 'air',
@@ -207,6 +253,9 @@ async function score(places, opts) {
       errors,
       results: results.map((r) => ({
         label: r.label,
+        rent: r.rent ?? null,
+        size: r.size ?? null,
+        url: r.url ?? null,
         display: r.display,
         lat: r.lat,
         lon: r.lon,
@@ -262,6 +311,8 @@ async function main() {
       arrive: { type: 'string' },
       time: { type: 'string', short: 't' },
       json: { type: 'boolean' },
+      file: { type: 'string', short: 'f' },
+      format: { type: 'string' },
       overpass: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
@@ -280,8 +331,10 @@ async function main() {
     return;
   }
   if (cmd === 'score') {
-    if (!rest.length) throw new Error('Mindestens eine Adresse oder lat,lon angeben.');
-    return score(rest, values);
+    const places = [...rest];
+    if (values.file) places.push(...parseCandidateLines(readFileSync(values.file, 'utf8')));
+    if (!places.length) throw new Error('Mindestens eine Adresse, lat,lon oder --file angeben.');
+    return score(places, values);
   }
   throw new Error(`Unbekannter Befehl „${cmd}“ – siehe --help`);
 }
