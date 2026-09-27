@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>search-a-hood</title>
+  <meta name="description" content="Modulares OSINT-Tool: Finde Wohnlagen, die zu dir passen – auf Basis von OpenStreetMap." />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+  <aside id="sidebar">
+    <header>
+      <h1>search-a-hood</h1>
+      <p class="sub">Wo wohnen, ohne sich Sorgen zu machen, ob der Laden noch auf hat?</p>
+    </header>
+
+    <form id="search-form" class="row">
+      <input id="search-input" type="search" placeholder="Adresse oder Stadtteil suchen…" autocomplete="off" />
+      <button type="submit">Suchen</button>
+    </form>
+
+    <section>
+      <h2>Presets</h2>
+      <div id="presets" class="chips"></div>
+    </section>
+
+    <section>
+      <h2>Zeitpunkt</h2>
+      <label class="row">
+        <span>Öffnungszeiten prüfen für</span>
+        <input id="time-input" type="datetime-local" />
+      </label>
+      <p class="hint">Gilt für Module mit „nur geöffnet“ – z. B. Späti um Sonntag 23 Uhr.</p>
+    </section>
+
+    <section>
+      <div class="row between">
+        <h2>Module</h2>
+        <button id="reset-btn" class="link" type="button">zurücksetzen</button>
+      </div>
+      <div id="modules"></div>
+    </section>
+
+    <section>
+      <details id="custom">
+        <summary>➕ Eigenes Modul</summary>
+        <form id="custom-form" class="stack">
+          <input name="name" placeholder="Name, z. B. Dönerladen" required />
+          <input name="query" placeholder='Overpass-Filter, z. B. [cuisine=kebab]' required />
+          <p class="hint">Mehrere Filter mit <code>;</code> trennen. Tags findest du auf <a href="https://wiki.openstreetmap.org/wiki/DE:Map_Features" target="_blank" rel="noopener">OSM Map Features</a>.</p>
+          <div class="row">
+            <label><input name="hours" type="checkbox" /> hat Öffnungszeiten</label>
+            <input name="color" type="color" value="#34495e" />
+          </div>
+          <button type="submit">Modul hinzufügen</button>
+        </form>
+      </details>
+    </section>
+
+    <footer>
+      Daten © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>-Mitwirkende (ODbL),
+      abgefragt über die Overpass API. Keine Rechtsberatung.
+    </footer>
+  </aside>
+
+  <main id="map-wrap">
+    <div id="map"></div>
+    <div id="toolbar">
+      <button id="analyze-btn" class="primary" type="button">🔍 Sichtbares Gebiet analysieren</button>
+      <label class="opacity">Heatmap <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.55" /></label>
+    </div>
+    <div id="status" role="status" aria-live="polite"></div>
+    <div id="results" hidden>
+      <h3>Top-Lagen</h3>
+      <ol id="top-list"></ol>
+      <div class="legend"><span>schlecht</span><i></i><span>top</span></div>
+      <p class="hint">Grau = Pflichtkriterium verletzt. Klick auf die Karte für einen Standort-Report.</p>
+    </div>
+  </main>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

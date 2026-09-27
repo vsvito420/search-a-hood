@@ -1,0 +1,12 @@
+{
+  "name": "search-a-hood",
+  "version": "0.1.0",
+  "description": "Modulares OSINT-Tool zur Wohnungs-/Lagesuche auf Basis von OpenStreetMap",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test"
+  },
+  "license": "MIT"
+}
