@@ -218,11 +218,11 @@
   <main id="map-wrap">
     <div id="map"></div>
     <div id="toolbar">
-      <button id="analyze-btn" class="primary" type="button">🔍 Sichtbares Gebiet analysieren</button>
-      <label class="opacity">Heatmap <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.55" />
+      <button id="analyze-btn" class="primary" type="button">🔍 <span class="long">Sichtbares Gebiet </span>analysieren</button>
+      <label class="opacity"><span class="long">Heatmap </span><input id="opacity" type="range" min="0" max="1" step="0.05" value="0.55" />
         <span title="Farbskala auf den sichtbaren Bereich strecken (R)"><input id="relative" type="checkbox" /> relativ</span></label>
-      <button id="iso-btn" type="button" title="Isochrone: 5/10/15 min zu Fuß vom letzten Klickpunkt">⏱ Isochrone</button>
-      <button id="timeline-btn" type="button" title="Zeitraffer durch die Woche (T)">📅 Woche</button>
+      <button id="iso-btn" type="button" title="Isochrone: 5/10/15 min zu Fuß vom letzten Klickpunkt">⏱<span class="long"> Isochrone</span></button>
+      <button id="timeline-btn" type="button" title="Zeitraffer durch die Woche (T)">📅<span class="long"> Woche</span></button>
     </div>
     <div id="timeline" hidden>
       <button id="tl-play" type="button" aria-label="Abspielen">▶</button>

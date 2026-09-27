@@ -180,11 +180,18 @@ footer { margin-top: auto; font-size: 11px; color: var(--muted); }
 .heatmap { image-rendering: auto; }
 
 @media (max-width: 800px) {
-  body { grid-template-columns: 1fr; grid-template-rows: 55vh auto; }
+  body { grid-template-columns: 1fr; grid-template-rows: 62vh auto; }
   #map-wrap { grid-row: 1; }
   #sidebar { grid-row: 2; border-right: none; border-top: 1px solid var(--border); overflow: visible; }
-  #results { top: auto; bottom: 24px; right: 12px; width: 200px; }
-  #status { bottom: auto; top: 60px; }
+  #toolbar { left: 52px; right: 8px; top: 10px; gap: 6px; }
+  #toolbar .long { display: none; }
+  #toolbar button, #toolbar .opacity { padding: 5px 8px; }
+  #toolbar .opacity input[type='range'] { width: 70px; }
+  #status { bottom: 30px; left: 8px; right: 8px; max-width: none; font-size: 12px; }
+  #results { top: 56px; right: 8px; width: 190px; max-height: 40%; overflow: auto; padding: 8px 10px; font-size: 12px; }
+  #results .hint, #results .legend { display: none; }
+  #timeline { bottom: 76px; }
+  .leaflet-control-layers { margin-bottom: 70px !important; }
 }
 
 /* ---------- Tabs ---------- */
