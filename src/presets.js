@@ -1,6 +1,24 @@
 // Presets sind nur Einstellungs-Pakete für Module – beliebig erweiterbar.
 export const PRESETS = [
   {
+    id: 'informatiker',
+    name: '🧑‍💻 Informatiker',
+    overlays: ['breitbandatlas'],
+    description: 'Breitbandatlas-Overlay, Club-Mate, Hackerspace, Späti & Döner nachts offen, Bahn nah, Ruhe vor Clubs und Hauptstraßen.',
+    modules: {
+      fibre: { enabled: true, distance: 250, weight: 0.3 },
+      'transit-rail': { enabled: true, distance: 600, weight: 1.5 },
+      spaeti: { enabled: true, distance: 400, weight: 1.5, openAtTime: true },
+      'late-food': { enabled: true, distance: 500, weight: 1, openAtTime: true },
+      'club-mate': { enabled: true, distance: 800, weight: 0.3 },
+      hackerspace: { enabled: true, distance: 2500, weight: 0.5 },
+      supermarket: { enabled: true, distance: 500, weight: 1 },
+      parcel: { enabled: true, distance: 400, weight: 1 },
+      'road-noise': { enabled: true, distance: 120, weight: 1 },
+      'nightlife-noise': { enabled: true, distance: 100, weight: 0.5 },
+    },
+  },
+  {
     id: 'nachteule',
     name: '🌙 Nachteule',
     description: '24/7-Tanke, Späti mit Öffnungszeit-Check, Bahn in der Nähe.',

@@ -33,7 +33,7 @@ export function poiPopup(module, el, time) {
   </div>`;
 }
 
-export function reportPopup({ parts, score }, latlng) {
+export function reportPopup({ parts, score }, latlng, { walk = false } = {}) {
   const rows = parts
     .map((p) => {
       const { module, settings, hit, dist, satisfied } = p;
@@ -45,13 +45,14 @@ export function reportPopup({ parts, score }, latlng) {
           ? `> ${formatDist(settings.distance)}`
           : `> ${formatDist(settings.distance * 2)}`;
       const goal = `${settings.mode === 'far' ? '≥' : '≤'} ${formatDist(settings.distance)}`;
-      return `<tr><td>${icon}</td><td>${esc(module.name)}${what ? `<br><small>${what}</small>` : ''}</td><td>${d}<br><small>Ziel ${goal}</small></td></tr>`;
+      const how = walk && module.geometry !== 'line' && settings.mode !== 'far' ? '🚶' : '';
+      return `<tr><td>${icon}</td><td>${esc(module.name)}${what ? `<br><small>${what}</small>` : ''}</td><td>${how}${d}<br><small>Ziel ${goal}</small></td></tr>`;
     })
     .join('');
   const total = score == null ? '<span class="bad">Pflichtkriterium verletzt</span>' : `${Math.round(score * 100)} %`;
   return `<div class="report">
     <div class="score">${total}</div>
-    <small>${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}</small>
+    <small>${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)} · ${walk ? '🚶 Fußwege' : 'Luftlinie'}</small>
     <table>${rows}</table>
   </div>`;
 }

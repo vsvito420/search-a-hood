@@ -13,6 +13,7 @@ export class DataStore {
     this.key = null;
     this.bbox = null;
     this.entries = new Map(); // moduleId -> {elements} | {error}
+    this.lastQuery = null;
   }
 
   setArea(bbox) {
@@ -45,7 +46,8 @@ export class DataStore {
     const key = this.key;
     onProgress?.(`Lade ${missing.length} Modul${missing.length > 1 ? 'e' : ''} in einer Abfrage …`);
     try {
-      const elements = await this.run(buildCombinedQuery(missing, this.bbox), { signal });
+      this.lastQuery = buildCombinedQuery(missing, this.bbox);
+      const elements = await this.run(this.lastQuery, { signal });
       if (key !== this.key) return;
       for (const [id, els] of classify(elements, missing)) this.entries.set(id, { elements: els });
     } catch (err) {

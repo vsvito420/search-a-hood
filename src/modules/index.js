@@ -18,10 +18,21 @@ import bubatz from './bubatz.js';
 import nightlifeNoise from './nightlife-noise.js';
 import roadNoise from './road-noise.js';
 import railNoise from './rail-noise.js';
+import fibre from './fibre.js';
+import cellTower from './cell-tower.js';
+import hackerspace from './hackerspace.js';
+import clubMate from './club-mate.js';
+import coworking from './coworking.js';
+import publicWifi from './public-wifi.js';
+import electronics from './electronics.js';
+import library from './library.js';
+import evCharging from './ev-charging.js';
+import lateFood from './late-food.js';
 
 export const BUILTIN_MODULES = [
   fuel247,
   spaeti,
+  lateFood,
   supermarket,
   bakery,
   parcel,
@@ -31,8 +42,17 @@ export const BUILTIN_MODULES = [
   transitRail,
   transitBus,
   carsharing,
+  evCharging,
+  fibre,
+  cellTower,
+  publicWifi,
+  coworking,
+  hackerspace,
+  clubMate,
+  electronics,
   park,
   gym,
+  library,
   schoolKita,
   bubatz,
   nightlifeNoise,
@@ -41,7 +61,7 @@ export const BUILTIN_MODULES = [
 ];
 
 /** Eigene Module aus der UI (JSON) in echte Module umwandeln. */
-export function customModule({ id, name, query, color, supportsHours }) {
+export function customModule({ id, name, query, color, supportsHours, geometry }) {
   return defineModule({
     id,
     name,
@@ -49,6 +69,7 @@ export function customModule({ id, name, query, color, supportsHours }) {
     color: color || '#34495e',
     query: Array.isArray(query) ? query : [query],
     supportsHours: !!supportsHours,
+    geometry: geometry === 'line' ? 'line' : 'point',
     custom: true,
     defaults: { enabled: true },
   });

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>search-a-hood</title>
   <meta name="description" content="Modulares OSINT-Tool: Finde Wohnlagen, die zu dir passen – auf Basis von OpenStreetMap." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏘️</text></svg>" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -12,56 +13,168 @@
 <body>
   <aside id="sidebar">
     <header>
-      <h1>search-a-hood</h1>
+      <div class="row between">
+        <h1>search-a-hood</h1>
+        <button id="palette-btn" class="kbd-btn" type="button" title="Befehlspalette">⌘K</button>
+      </div>
       <p class="sub">Wo wohnen, ohne sich Sorgen zu machen, ob der Laden noch auf hat?</p>
     </header>
 
     <form id="search-form" class="row">
-      <input id="search-input" type="search" placeholder="Adresse oder Stadtteil suchen…" autocomplete="off" />
+      <input id="search-input" type="search" placeholder="Adresse oder Stadtteil suchen…  ( / )" autocomplete="off" />
       <button type="submit">Suchen</button>
     </form>
 
-    <section>
-      <h2>Presets</h2>
-      <div id="presets" class="chips"></div>
-    </section>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="criteria" aria-selected="true">Kriterien</button>
+      <button role="tab" data-tab="candidates">Wohnungen <span id="cand-count" class="badge"></span></button>
+      <button role="tab" data-tab="layers">Layer</button>
+      <button role="tab" data-tab="dev">Dev</button>
+    </nav>
 
-    <section>
-      <h2>Zeitpunkt</h2>
-      <label class="row">
-        <span>Öffnungszeiten prüfen für</span>
-        <input id="time-input" type="datetime-local" />
-      </label>
-      <p class="hint">Gilt für Module mit „nur geöffnet“ – z. B. Späti um Sonntag 23 Uhr.</p>
-    </section>
+    <!-- ============ Kriterien ============ -->
+    <div class="tab-panel" data-panel="criteria">
+      <section>
+        <h2>Presets</h2>
+        <div id="presets" class="chips"></div>
+      </section>
 
-    <section>
-      <div class="row between">
-        <h2>Module</h2>
-        <button id="reset-btn" class="link" type="button">zurücksetzen</button>
-      </div>
-      <div id="modules"></div>
-    </section>
+      <section>
+        <h2>Zeitpunkt</h2>
+        <label class="row">
+          <span>Öffnungszeiten prüfen für</span>
+          <input id="time-input" type="datetime-local" />
+        </label>
+        <div class="chips small" id="time-chips">
+          <button type="button" data-time="now">jetzt</button>
+          <button type="button" data-time="fri23">Fr 23 Uhr</button>
+          <button type="button" data-time="sat22">Sa 22 Uhr</button>
+          <button type="button" data-time="sun11">So 11 Uhr</button>
+          <button type="button" data-time="night3">3 Uhr nachts</button>
+        </div>
+        <p class="hint">Gilt für Module mit „nur geöffnet“.</p>
+      </section>
 
-    <section>
-      <details id="custom">
-        <summary>➕ Eigenes Modul</summary>
-        <form id="custom-form" class="stack">
-          <input name="name" placeholder="Name, z. B. Dönerladen" required />
-          <input name="query" placeholder='Overpass-Filter, z. B. [cuisine=kebab]' required />
-          <p class="hint">Mehrere Filter mit <code>;</code> trennen. Tags findest du auf <a href="https://wiki.openstreetmap.org/wiki/DE:Map_Features" target="_blank" rel="noopener">OSM Map Features</a>.</p>
-          <div class="row">
-            <label><input name="hours" type="checkbox" /> hat Öffnungszeiten</label>
-            <input name="color" type="color" value="#34495e" />
-          </div>
-          <button type="submit">Modul hinzufügen</button>
-        </form>
-      </details>
-    </section>
+      <section>
+        <h2>Entfernung messen als</h2>
+        <div class="seg" id="dist-mode">
+          <button type="button" data-mode="air" aria-pressed="true">Luftlinie</button>
+          <button type="button" data-mode="walk" aria-pressed="false">🚶 echte Fußwege</button>
+        </div>
+        <p class="hint">„Fußwege“ lädt das Wegenetz und rechnet mit Dijkstra – Flüsse, Bahntrassen und Autobahnen ohne Übergang zählen dann wirklich als Umweg.</p>
+      </section>
+
+      <section>
+        <div class="row between">
+          <h2>Module</h2>
+          <span>
+            <input id="module-filter" type="search" placeholder="filtern…" class="mini" />
+            <button id="reset-btn" class="link" type="button">zurücksetzen</button>
+          </span>
+        </div>
+        <div id="modules"></div>
+      </section>
+
+      <section>
+        <details id="custom">
+          <summary>➕ Eigenes Modul</summary>
+          <form id="custom-form" class="stack">
+            <input name="name" placeholder="Name, z. B. Dönerladen" required />
+            <input name="query" placeholder='Overpass-Filter, z. B. [cuisine~"kebab"]' required />
+            <p class="hint">Syntax wie Overpass QL: <code>[key]</code> <code>[key=value]</code> <code>[key!=v]</code> <code>[key~"regex"]</code>, mehrere mit <code>;</code> trennen (ODER). Tags: <a href="https://wiki.openstreetmap.org/wiki/DE:Map_Features" target="_blank" rel="noopener">OSM Map Features</a>.</p>
+            <div class="row">
+              <label><input name="hours" type="checkbox" /> hat Öffnungszeiten</label>
+              <label><input name="line" type="checkbox" /> ist Linie (Straße/Fluss)</label>
+              <input name="color" type="color" value="#34495e" />
+            </div>
+            <button type="submit">Modul hinzufügen</button>
+          </form>
+        </details>
+      </section>
+    </div>
+
+    <!-- ============ Wohnungen ============ -->
+    <div class="tab-panel" data-panel="candidates" hidden>
+      <section>
+        <h2>Wohnungs-Kandidaten</h2>
+        <p class="hint">Adressen aus Inseraten einfügen – eine pro Zeile. Optional mit <code>|</code> getrennt: <code>Adresse | Kaltmiete € | m² | Link</code>. Oder <kbd>Shift</kbd>+Klick auf die Karte.</p>
+        <textarea id="cand-input" rows="4" placeholder="Wiener Str. 10, Berlin | 1150 | 62 | https://…&#10;Oranienstr. 185, 10999 Berlin"></textarea>
+        <div class="row">
+          <button id="cand-add" type="button" class="primary">Hinzufügen & geocodieren</button>
+          <button id="cand-fit" type="button">Gebiet um Kandidaten analysieren</button>
+        </div>
+      </section>
+      <section>
+        <div id="cand-table" class="table-wrap"></div>
+      </section>
+    </div>
+
+    <!-- ============ Layer ============ -->
+    <div class="tab-panel" data-panel="layers" hidden>
+      <section>
+        <h2>Overlays (WMS / Kacheln)</h2>
+        <p class="hint">Behördliche Geodaten über die Karte legen. Aktive WMS-Layer werden beim Klick auf die Karte am Punkt abgefragt (GetFeatureInfo).</p>
+        <div id="overlays"></div>
+      </section>
+      <section>
+        <details>
+          <summary>➕ Eigener WMS / XYZ</summary>
+          <form id="overlay-form" class="stack">
+            <input name="name" placeholder="Name, z. B. Lärmkarte Berlin" required />
+            <input name="url" placeholder="WMS-Basis-URL oder XYZ mit {z}/{x}/{y}" required />
+            <input name="layers" placeholder="WMS-Layer (optional, sonst später abrufen)" />
+            <p class="hint">Lärmkarten, Hochwasser, Bodenrichtwerte usw. gibt es als WMS von den Geoportalen der Länder.</p>
+            <button type="submit">Overlay hinzufügen</button>
+          </form>
+        </details>
+      </section>
+    </div>
+
+    <!-- ============ Dev ============ -->
+    <div class="tab-panel" data-panel="dev" hidden>
+      <section>
+        <h2>Teilen & Konfiguration</h2>
+        <div class="row wrap">
+          <button id="permalink-btn" type="button">🔗 Permalink kopieren</button>
+          <button id="config-export" type="button">⬇ Config (JSON)</button>
+          <label class="button">⬆ Config laden<input id="config-import" type="file" accept="application/json" hidden /></label>
+        </div>
+      </section>
+      <section>
+        <h2>Export</h2>
+        <div class="row wrap">
+          <button id="export-geojson" type="button">Heatmap-Zellen (GeoJSON)</button>
+          <button id="export-pois" type="button">POIs (GeoJSON)</button>
+          <button id="export-cand" type="button">Kandidaten (CSV)</button>
+        </div>
+      </section>
+      <section>
+        <h2>Overpass-Abfrage</h2>
+        <p class="hint">Die kombinierte Abfrage der letzten Analyse – direkt in <a href="https://overpass-turbo.eu" target="_blank" rel="noopener">overpass-turbo</a> testbar.</p>
+        <pre id="last-query" class="code">–</pre>
+        <button id="copy-query" type="button">Kopieren</button>
+      </section>
+      <section>
+        <h2>Tastenkürzel</h2>
+        <table class="keys">
+          <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd></td><td>Befehlspalette</td></tr>
+          <tr><td><kbd>A</kbd></td><td>Sichtbares Gebiet analysieren</td></tr>
+          <tr><td><kbd>/</kbd></td><td>Adresssuche</td></tr>
+          <tr><td><kbd>W</kbd></td><td>Luftlinie ↔ Fußwege</td></tr>
+          <tr><td><kbd>I</kbd></td><td>Isochrone am letzten Klickpunkt</td></tr>
+          <tr><td><kbd>Shift</kbd>+Klick</td><td>Kandidat an Position anlegen</td></tr>
+          <tr><td><kbd>1</kbd>–<kbd>4</kbd></td><td>Tabs wechseln</td></tr>
+        </table>
+      </section>
+      <section>
+        <h2>Konsole</h2>
+        <p class="hint"><code>searchAHood</code> ist im DevTools-Kontext verfügbar: <code>state</code>, <code>map</code>, <code>evaluate(lat, lon)</code>, <code>modules</code>.</p>
+      </section>
+    </div>
 
     <footer>
-      Daten © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>-Mitwirkende (ODbL),
-      abgefragt über die Overpass API. Keine Rechtsberatung.
+      Daten © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>-Mitwirkende (ODbL) via Overpass API · Geocoding: Nominatim.
+      Keine Rechtsberatung. <a href="https://github.com/vsvito420/search-a-hood" target="_blank" rel="noopener">Quellcode</a>
     </footer>
   </aside>
 
@@ -70,15 +183,23 @@
     <div id="toolbar">
       <button id="analyze-btn" class="primary" type="button">🔍 Sichtbares Gebiet analysieren</button>
       <label class="opacity">Heatmap <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.55" /></label>
+      <button id="iso-btn" type="button" title="Isochrone: 5/10/15 min zu Fuß vom letzten Klickpunkt">⏱ Isochrone</button>
     </div>
     <div id="status" role="status" aria-live="polite"></div>
     <div id="results" hidden>
-      <h3>Top-Lagen</h3>
+      <div class="row between"><h3>Top-Lagen</h3><button id="results-close" class="link" type="button" aria-label="schließen">✕</button></div>
       <ol id="top-list"></ol>
       <div class="legend"><span>schlecht</span><i></i><span>top</span></div>
-      <p class="hint">Grau = Pflichtkriterium verletzt. Klick auf die Karte für einen Standort-Report.</p>
+      <p class="hint">Grau = Pflichtkriterium verletzt. Klick auf die Karte → Standort-Report.</p>
     </div>
   </main>
+
+  <div id="palette" hidden>
+    <div class="palette-box" role="dialog" aria-label="Befehlspalette">
+      <input id="palette-input" placeholder="Befehl, Modul, Preset oder Kandidat…" autocomplete="off" />
+      <ul id="palette-list"></ul>
+    </div>
+  </div>
 
   <script type="module" src="src/main.js"></script>
 </body>
