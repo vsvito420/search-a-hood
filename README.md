@@ -16,19 +16,19 @@
 
 | | |
 |---|---|
-| 🧩 **Module** | 28 Kriterien in 9 Kategorien. Eigene Module legst du per Overpass-Filter direkt in der UI an, ohne Code. |
+| 🧩 **Module** | 29 Kriterien in 9 Kategorien. Eigene Module legst du per Overpass-Filter direkt in der UI an, ohne Code. |
 | 🎯 **Scoring** | „nah dran ≤ X m“ oder „weit weg ≥ X m“, Gewicht 0–3, Pflichtkriterien, „mind. N im Umkreis“ (k-nächster Treffer) |
 | 🚶 **Echte Fußwege** | Das Wegenetz wird als Graph im Browser aufgebaut, pro Modul läuft ein Multi-Source-Dijkstra. Flüsse, Gleise und Autobahnen ohne Übergang zählen dann als Umweg. |
 | 🎯 **Pendel-Check** | „Arbeit ≤ 25 min mit ÖPNV“, „Uni ≤ 20 min mit dem Rad“ wird zum Kriterium wie jedes andere. Rad, Fuß und Auto kommen von FOSSGIS-OSRM, ÖPNV von Transitous (MOTIS) mit echtem Fahrplan und Ankunftszeit. |
-| ⏱ **Isochronen** | Was ist in 5/10/15 Minuten zu Fuß erreichbar? Die Darstellung ist ein Netz aus Straßensegmenten. |
+| ⏱ **Isochronen** | Was ist in 5/10/15 Minuten zu Fuß erreichbar? Die Darstellung ist ein Netz aus Straßensegmenten. Dazu kommt eine **ÖPNV-Isochrone**: alle Haltestellen, die ab dem Klickpunkt in 30 min mit echtem Fahrplan erreichbar sind, inklusive Umstiegen. |
 | 🕒 **Öffnungszeiten** | Mit „nur geöffnet“ zählen nur Treffer, die zum gewählten Zeitpunkt offen sind. Schnellwahl für Fr 23 Uhr, 3 Uhr nachts usw. |
 | 📅 **Wochen-Zeitraffer** | Mit dem Slider oder ▶ gehst du stundenweise durch die Woche, die Heatmap rechnet live mit. |
-| 🏠 **Wohnungsvergleich** | Adressen aus Inseraten einfügen (`Adresse \| Miete \| m² \| Link`). Sie werden geocodiert, bewertet und in einer sortierbaren Tabelle gezeigt, CSV-Export inklusive. |
-| 📄 **Steckbrief** | Druckbare Seite pro Lage: Score, Abzüge, nächste Treffer mit Öffnungsstatus, Anzahl in 5/10/15 min, Karte |
+| 🏠 **Wohnungsvergleich** | Adressen aus Inseraten einfügen (`Adresse \| Miete \| m² \| Link`). Sie werden geocodiert, bewertet und in einer sortierbaren **Score-Matrix** gezeigt (Zelle = Kriterium, Farbe = Erfüllungsgrad), CSV-Export inklusive. |
+| 📄 **Steckbrief** | Druckbare Seite pro Lage: Kurzfazit („Stark: … Schwach: …“), Score, Abzüge, nächste Treffer mit Öffnungsstatus, Anzahl in 5/10/15 min, Karte |
 | 🌐 **Glasfaser & Co.** | Breitbandatlas der BNetzA als WMS-Overlay, am Klickpunkt per GetFeatureInfo abfragbar. Dazu OSM-Indikatoren (Telekom-Verteiler, Mobilfunkmasten, freies WLAN). |
 | 🗺 **Overlays** | Beliebige WMS- oder XYZ-Dienste (Lärmkarten, Hochwasser, Bodenrichtwerte …), Layer-Liste per GetCapabilities |
 | 🔍 **Analyse-Werkzeuge** | Einzelansicht pro Kriterium (◉), relative Farbskala, „Warum nicht 100 %?“-Erklärung, Datenqualität (Anteil mit Öffnungszeiten) |
-| ⌨️ **Für Devs** | Befehlspalette (⌘K), Tastenkürzel, Permalinks, Config-Import/Export, GeoJSON-Export, eigene Overpass-Instanz, `window.searchAHood` in der Konsole |
+| ⌨️ **Für Devs** | Befehlspalette (⌘K), Tastenkürzel, Permalinks, Deep-Links (`?addr=…&preset=…&run=1`), Config-Import/Export, GeoJSON-Export, eigene Overpass-Instanz, `window.searchAHood` in der Konsole |
 | 💻 **CLI** | `search-a-hood score "Adresse" -p informatiker --walk --json` |
 
 | Wochen-Zeitraffer: Sa 03:00 | Wohnungsvergleich | Steckbrief |
@@ -42,7 +42,7 @@
 | 🧑‍💻 **Informatiker** | Breitbandatlas-Overlay, Späti und Döner nachts offen, Bahn nah, Paketstation, Hackerspace, Club-Mate, Ruhe vor Clubs und Hauptstraßen |
 | 🌙 Nachteule | 24/7-Tanke, Späti mit Öffnungszeiten-Check, Bahn |
 | 🌿 Ruhig & grün | Park nah; Hauptstraßen, Gleise und Clubs weit weg |
-| 🥦 Bubatz-freundlich | Hauseingang außerhalb der 100-m-Zonen nach KCanG § 5 (Pflicht), dazu Späti, Tanke und Park |
+| 🥦 Bubatz-freundlich | Hauseingang außerhalb der 100-m-Zonen nach KCanG § 5 und, zwischen 7 und 20 Uhr, außerhalb von Fußgängerzonen (beides Pflicht). Dazu Späti, Tanke und Park. Der Zeitraffer zeigt den Unterschied zwischen Tag und Nacht. |
 | 👨‍👩‍👧 Familie | Schule/Kita, Arzt, Apotheke, Supermarkt, Park, ohne Hauptstraße |
 
 ---
@@ -60,6 +60,17 @@ npm test             # Unit-Tests (node:test)
 4. Die Karte anklicken, um den Standort-Report zu sehen. „📄 Steckbrief“ öffnet die druckbare Version.
 
 Grün heißt, die Lage passt. Rot heißt, sie passt nicht. Grau heißt, ein Pflichtkriterium ist verletzt.
+
+### Deep-Links
+
+Die App lässt sich per URL steuern, etwa aus einer Tabelle mit Inseraten oder einem Bookmark:
+
+```
+index.html?addr=Oranienstraße 185, Berlin&preset=informatiker&run=1
+index.html?at=52.4986,13.418&z=16&walk=1&time=2026-10-02T23:00&run=1
+```
+
+`addr` oder `at` bestimmen den Ort, `z` den Zoom. Dazu kommen `preset`, `walk=1` und `time`. Mit `run=1` wird sofort analysiert und der Report geöffnet.
 
 ### Tastenkürzel
 
@@ -155,7 +166,7 @@ Optionen: `--preset/-p`, `--modules/-m a,b,c`, `--set/-s modul.key=wert` (mehrfa
 
 - **Öffnungszeiten** fehlen in OSM oft. In Kreuzberg haben z. B. nur ca. 30 % der Spätis `opening_hours`, bei Supermärkten sind es über 95 %. Die Modul-Karte zeigt den Anteil (⏱ xx %). Bei „nur geöffnet“ zählen nur Treffer mit bekannten Zeiten.
 - **Glasfaser** ist in OSM kaum erfasst. Das OSM-Modul ist nur ein Indikator mit niedrigem Gewicht. Verbindlich ist der **Breitbandatlas** (Tab „Layer“ → „Layer abrufen“ → z. B. einen FTTH-/Gigabit-Layer wählen). Ein Klick auf die Karte fragt die Versorgung am Punkt ab.
-- **Bubatz-Zonen** nähern § 5 KCanG an: 100 m um Schulen, Kitas, Spielplätze, Jugendeinrichtungen und öffentliche Sportstätten. Das ist **keine Rechtsberatung**, „Sichtweite“ ist Auslegungssache, und die Regel für Fußgängerzonen von 7 bis 20 Uhr ist nicht abgebildet.
+- **Bubatz-Zonen** nähern § 5 KCanG an: 100 m um Schulen, Kitas, Spielplätze, Jugendeinrichtungen und öffentliche Sportstätten, dazu Fußgängerzonen von 7 bis 20 Uhr (zeitabhängig). Das ist **keine Rechtsberatung**. „Sichtweite“ ist Auslegungssache, und bei großen Fußgänger-Plätzen wird zum Rand bzw. zur Mittellinie gemessen.
 
 ---
 

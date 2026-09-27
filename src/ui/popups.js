@@ -95,3 +95,22 @@ function explain(parts, score) {
   if (!lost.length) return '';
   return `<p class="why">Abzug: ${lost.map((l) => `<b>−${Math.round(l.lost * 100)}</b> ${esc(l.part.module.name)}`).join(' · ')}</p>`;
 }
+
+/**
+ * Kurzfazit in Worten: die stärksten erfüllten und die verfehlten Kriterien.
+ * z. B. „Stark: Späti 78 m · U-Bahn 135 m. Schwach: Uni 33 min (Ziel ≤ 25 min).“
+ */
+export function summarize(parts) {
+  const val = (p) => (p.hit ? fmtValue(p.module, p.dist) : p.settings.mode === 'far' ? 'weit weg' : 'keins in Reichweite');
+  const good = parts
+    .filter((p) => p.satisfied && p.weight > 0 && p.settings.mode === 'near' && p.hit)
+    .sort((a, b) => b.weight - a.weight || a.dist / a.settings.distance - b.dist / b.settings.distance)
+    .slice(0, 3)
+    .map((p) => `${p.module.name} ${val(p)}`);
+  const bad = parts
+    .filter((p) => !p.satisfied && (p.weight > 0 || p.required))
+    .sort((a, b) => Number(b.required) - Number(a.required) || b.weight * (1 - b.score) - a.weight * (1 - a.score))
+    .slice(0, 3)
+    .map((p) => `${p.module.name} ${val(p)} (Ziel ${p.settings.mode === 'far' ? '≥' : '≤'} ${fmtValue(p.module, p.settings.distance)})`);
+  return [good.length && `Stark: ${good.join(' · ')}.`, bad.length && `Schwach: ${bad.join(' · ')}.`].filter(Boolean).join(' ') || 'Keine Kriterien aktiv.';
+}

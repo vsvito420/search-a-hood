@@ -1,4 +1,4 @@
-import { esc, formatDist, fmtValue, walkMin, lostPoints, safeUrl } from './popups.js';
+import { esc, formatDist, fmtValue, walkMin, lostPoints, safeUrl, summarize } from './popups.js';
 import { SpatialIndex } from '../core/spatial-index.js';
 import { elementsToPoints } from '../core/overpass.js';
 import { isOpenAt } from '../core/hours.js';
@@ -64,6 +64,7 @@ export function buildReportHtml(place, ev, layers, { time, distMode }) {
   .score { font-size: 44px; font-weight: 800; text-align: center; border-radius: 14px; padding: 18px 8px; background: rgb(${r} ${g} ${b}); color: #111; }
   .score small { display: block; font-size: 12px; font-weight: 600; color: #111; opacity: .75; }
   .facts { font-size: 14px; line-height: 1.6; }
+  .fazit { font-size: 15px; margin: 0 0 6px; }
   table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   th, td { border-bottom: 1px solid var(--border); padding: 6px 6px; text-align: left; vertical-align: top; }
   th { color: var(--muted); font-weight: 600; } .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -81,6 +82,7 @@ export function buildReportHtml(place, ev, layers, { time, distMode }) {
 <div class="top">
   <div class="score">${scoreTxt}<small>Lage-Score</small></div>
   <div class="facts">
+    <p class="fazit">${esc(summarize(ev.parts))}</p>
     ${place.rent ? `Kaltmiete <b>${place.rent} €</b>${place.size ? ` · ${place.size} m² · <b>${ppsqm} €/m²</b>` : ''}<br>` : ''}
     ${broken.length ? `<span class="bad">Ausgeschlossen durch: ${broken.map((p) => esc(p.module.name)).join(', ')}</span><br>` : ''}
     ${lost.length ? `Abzüge: ${lost.slice(0, 5).map((l) => `${esc(l.part.module.name)} −${Math.round(l.lost * 100)}`).join(' · ')}` : ev.score != null ? 'Alle Kriterien voll erfüllt.' : ''}

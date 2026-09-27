@@ -44,9 +44,10 @@ export const PRESETS = [
   {
     id: 'bubatz',
     name: '🥦 Bubatz-freundlich',
-    description: 'Hauseingang außerhalb der 100-m-Zonen (Pflicht), Späti & Tanke nah.',
+    description: 'Außerhalb der 100-m-Zonen und (7–20 Uhr) der Fußgängerzonen – Pflicht. Späti & Tanke nah. Zeitraffer zeigt Tag/Nacht.',
     modules: {
       bubatz: { enabled: true, distance: 100, weight: 2, required: true },
+      'bubatz-pedestrian': { enabled: true, distance: 15, weight: 1, required: true },
       spaeti: { enabled: true, distance: 500, weight: 1 },
       'fuel-247': { enabled: true, distance: 1000, weight: 1 },
       park: { enabled: true, distance: 600, weight: 1 },

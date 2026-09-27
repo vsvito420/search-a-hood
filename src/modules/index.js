@@ -16,6 +16,7 @@ import park from './park.js';
 import gym from './gym.js';
 import schoolKita from './school-kita.js';
 import bubatz from './bubatz.js';
+import bubatzPedestrian from './bubatz-pedestrian.js';
 import nightlifeNoise from './nightlife-noise.js';
 import roadNoise from './road-noise.js';
 import railNoise from './rail-noise.js';
@@ -56,6 +57,7 @@ export const BUILTIN_MODULES = [
   library,
   schoolKita,
   bubatz,
+  bubatzPedestrian,
   nightlifeNoise,
   roadNoise,
   railNoise,

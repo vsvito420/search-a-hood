@@ -63,3 +63,13 @@ test('Steckbrief-HTML', () => {
   const evil = buildReportHtml({ label: 'x', lat: 0, lon: 0, url: 'javascript:alert(1)' }, { score: 1, parts: [] }, new Map(), { time: new Date(), distMode: 'air' });
   assert.ok(!/javascript:/i.test(evil));
 });
+
+test('summarize: Stärken und Schwächen in Worten', async () => {
+  const { summarize } = await import('../src/ui/popups.js');
+  const uni = mod({ id: 'target-u', name: '🚲 Uni', unit: 'min' });
+  const txt = summarize([
+    part(mod(), { weight: 2 }),
+    part(uni, { dist: 33, score: 0.7, satisfied: false, settings: { mode: 'near', distance: 25 } }),
+  ]);
+  assert.equal(txt, 'Stark: Späti 123 m. Schwach: 🚲 Uni 33 min (Ziel ≤ 25 min).');
+});
