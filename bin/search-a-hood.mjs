@@ -52,6 +52,7 @@ ${bold('Optionen für score')}
   -w, --walk                      Echte Fußwege statt Luftlinie (lädt das Wegenetz)
   -t, --time <ISO>                Zeitpunkt für „nur geöffnet“ (Standard: jetzt)
       --json                      Maschinenlesbare Ausgabe
+      --overpass <url>            Eigene Overpass-Instanz (auch via OVERPASS_URL)
   -h, --help
 
 ${bold('Beispiele')}
@@ -116,7 +117,8 @@ async function score(places, opts) {
   const lons = points.map((p) => p.lon);
   const bbox = padBbox({ south: Math.min(...lats), north: Math.max(...lats), west: Math.min(...lons), east: Math.max(...lons) }, radius + 200);
 
-  const run = (q, o) => runQuery(q, { ...o, fetchImpl: (url, init) => fetch(url, { ...init, headers: { 'User-Agent': UA } }) });
+  const endpoints = opts.overpass || process.env.OVERPASS_URL ? [opts.overpass || process.env.OVERPASS_URL] : undefined;
+  const run = (q, o) => runQuery(q, { ...o, endpoints, fetchImpl: (url, init) => fetch(url, { ...init, headers: { 'User-Agent': UA } }) });
   const store = new DataStore({ run });
   store.setArea(bbox);
   await store.ensure(mods, { onProgress: log });
@@ -205,6 +207,7 @@ async function main() {
       walk: { type: 'boolean', short: 'w' },
       time: { type: 'string', short: 't' },
       json: { type: 'boolean' },
+      overpass: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   });

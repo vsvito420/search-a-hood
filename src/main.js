@@ -4,7 +4,7 @@ import { PRESETS } from './presets.js';
 import { store } from './app/store.js';
 import { encodeState, decodeState } from './app/permalink.js';
 import { SpatialIndex } from './core/spatial-index.js';
-import { elementsToPoints, runQuery } from './core/overpass.js';
+import { elementsToPoints, runQuery, setEndpoints } from './core/overpass.js';
 import { DataStore, bboxKey } from './core/datastore.js';
 import { isValidSelector } from './core/tagfilter.js';
 import { analyzeArea, evaluatePoint, searchRadius } from './core/analyzer.js';
@@ -18,6 +18,7 @@ import { poiPopup, reportPopup, formatDist, esc } from './ui/popups.js';
 import { OverlayManager } from './ui/overlays.js';
 import { renderCandidateTable, sortValue } from './ui/candidates.js';
 import { createPalette } from './ui/palette.js';
+import { buildReportHtml, openReport } from './ui/report.js';
 
 const MAX_AREA_KM2 = 60;
 const MAX_WALK_AREA_KM2 = 30;
@@ -158,7 +159,7 @@ function refreshPanel() {
     onChange(id, patch) {
       Object.assign(state.settings[id], patch);
       saveSettings();
-      if ('enabled' in patch) refreshPanel();
+      if ('enabled' in patch || 'mode' in patch) refreshPanel();
       onSettingsChanged();
     },
     onFocus(id) {
@@ -394,7 +395,8 @@ function filterElements(module, settings, elements) {
 const fieldCache = new Map();
 function distanceSource(m, s, points) {
   const g = state.graph?.key === state.data.key ? state.graph.graph : null;
-  if (state.distMode !== 'walk' || !g || m.geometry === 'line' || s.mode === 'far') return new SpatialIndex(points);
+  // Luftlinie für: Linien (Lärm breitet sich nicht über Wege aus), "weit weg" (Sichtweite), k-nächster (k>1)
+  if (state.distMode !== 'walk' || !g || m.geometry === 'line' || s.mode === 'far' || (s.minCount || 1) > 1) return new SpatialIndex(points);
   const key = [state.data.key, m.id, s.openAtTime ? state.time.getTime() : 0, searchRadius(s), points.length].join('|');
   let f = fieldCache.get(key);
   if (!f) {
@@ -573,6 +575,7 @@ async function showReport(latlng) {
     <div class="popup-actions">
       <button type="button" data-act="iso">⏱ Isochrone</button>
       <button type="button" data-act="cand">★ Als Kandidat</button>
+      <button type="button" data-act="report">📄 Steckbrief</button>
       <a href="https://www.openstreetmap.org/?mlat=${latlng.lat}&mlon=${latlng.lng}#map=18/${latlng.lat}/${latlng.lng}" target="_blank" rel="noopener">OSM</a>
     </div>
     <div class="fi-wrap"></div>`;
@@ -582,6 +585,11 @@ async function showReport(latlng) {
   el.querySelector('[data-act="cand"]').addEventListener('click', () => {
     map.closePopup();
     addCandidateAt(latlng);
+  });
+  el.querySelector('[data-act="report"]').addEventListener('click', () => {
+    const cand = state.candidates.find((c) => c.lat != null && Math.abs(c.lat - latlng.lat) < 1e-6 && Math.abs(c.lon - latlng.lng) < 1e-6);
+    const place = cand ? { ...cand, label: cand.display || cand.label } : { label: `${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}`, lat: latlng.lat, lon: latlng.lng };
+    openReport(buildReportHtml(place, r, state.layers, { time: state.time, distMode: state.graph?.graph && state.distMode === 'walk' ? 'walk' : 'air' }));
   });
   // WMS-GetFeatureInfo (z. B. Breitbandatlas) asynchron nachladen
   const infos = await overlays.featureInfo(latlng);
@@ -859,6 +867,66 @@ $('#export-cand').addEventListener('click', () => {
   download('search-a-hood-kandidaten.csv', '﻿' + toCSV([header, ...data]), 'text/csv;charset=utf-8');
 });
 
+// Eigene Overpass-Instanz
+const overpassInput = $('#overpass-url');
+overpassInput.value = store.get('overpass', '');
+setEndpoints(overpassInput.value ? [overpassInput.value] : null);
+overpassInput.addEventListener('change', () => {
+  const v = overpassInput.value.trim();
+  store.set('overpass', v);
+  setEndpoints(v ? [v] : null);
+  setStatus(v ? `Overpass-Instanz: ${v}` : 'Overpass: Standard-Instanzen');
+});
+
+// =====================================================================
+// Wochen-Zeitraffer: Stunde für Stunde durch die Woche, Heatmap live
+// =====================================================================
+const tl = { el: $('#timeline'), range: $('#tl-range'), label: $('#tl-label'), play: $('#tl-play'), timer: null, raf: 0 };
+const DAY_NAMES = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+function weekStart() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // Montag
+  return d;
+}
+function timelineApply() {
+  const d = weekStart();
+  d.setHours(+tl.range.value);
+  tl.label.textContent = `${DAY_NAMES[d.getDay()]} ${String(d.getHours()).padStart(2, '0')}:00`;
+  state.time = d;
+  timeInput.value = toLocalInput(d);
+  // Direkt neu rechnen (ohne Debounce), aber max. einmal pro Frame
+  cancelAnimationFrame(tl.raf);
+  tl.raf = requestAnimationFrame(() => rebuild());
+}
+function toggleTimeline(show = tl.el.hidden) {
+  tl.el.hidden = !show;
+  if (!show) return stopPlay();
+  const t = state.time;
+  tl.range.value = ((t.getDay() + 6) % 7) * 24 + t.getHours();
+  timelineApply();
+  if (!enabledModules().some((m) => m.supportsHours && state.settings[m.id].openAtTime)) {
+    setStatus('Tipp: Bei mind. einem Modul „nur geöffnet“ aktivieren – sonst ändert sich nichts über die Zeit.');
+  }
+}
+function stopPlay() {
+  clearInterval(tl.timer);
+  tl.timer = null;
+  tl.play.textContent = '▶';
+}
+function togglePlay() {
+  if (tl.timer) return stopPlay();
+  tl.play.textContent = '⏸';
+  tl.timer = setInterval(() => {
+    tl.range.value = (+tl.range.value + 1) % 168;
+    timelineApply();
+  }, 350);
+}
+tl.range.addEventListener('input', timelineApply);
+tl.play.addEventListener('click', togglePlay);
+$('#tl-close').addEventListener('click', () => toggleTimeline(false));
+$('#timeline-btn').addEventListener('click', () => toggleTimeline());
+
 // =====================================================================
 // Befehlspalette & Tastenkürzel
 // =====================================================================
@@ -868,6 +936,7 @@ const palette = createPalette($('#palette'), () => [
   { label: '📏 Entfernung: Luftlinie', hint: 'W', run: () => setDistMode('air') },
   { label: '⏱ Isochrone am letzten Klickpunkt', hint: 'I', run: () => drawIsochrone() },
   { label: '🎚 Relative Farbskala an/aus', hint: 'R', run: () => relBox.click() },
+  { label: '📅 Wochen-Zeitraffer', hint: 'T', run: () => toggleTimeline(true) },
   ...(state.focusModule ? [{ label: '◉ Einzelansicht beenden', run: () => ((state.focusModule = null), refreshPanel(), scheduleRebuild()) }] : []),
   { label: '🔗 Permalink kopieren', run: () => $('#permalink-btn').click() },
   { label: '⬇ Kandidaten als CSV', run: () => $('#export-cand').click() },
@@ -905,6 +974,8 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'w') setDistMode(state.distMode === 'walk' ? 'air' : 'walk');
   else if (k === 'i') drawIsochrone();
   else if (k === 'r') relBox.click();
+  else if (k === 't') toggleTimeline();
+  else if (k === ' ' && !tl.el.hidden) (e.preventDefault(), togglePlay());
   else if (k === 'escape') map.closePopup();
   else if (/^[1-4]$/.test(k)) showTab(['criteria', 'candidates', 'layers', 'dev'][+k - 1]);
 });

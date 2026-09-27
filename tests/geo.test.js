@@ -54,3 +54,19 @@ test('SpatialIndex respektiert maxDist und within()', () => {
   assert.equal(idx.within(52.5001, 13.4, 50).length, 1);
   assert.equal(new SpatialIndex([]).nearest(0, 0), null);
 });
+
+test('SpatialIndex.kNearest stimmt mit Brute Force überein', () => {
+  const pts = Array.from({ length: 400 }, (_, i) => ({ id: i, lat: 52.5 + ((i * 7919) % 997) / 20000, lon: 13.3 + ((i * 104729) % 991) / 10000 }));
+  const idx = new SpatialIndex(pts, 120);
+  for (let q = 0; q < 30; q++) {
+    const lat = 52.5 + (q % 6) / 120;
+    const lon = 13.3 + Math.floor(q / 6) / 60;
+    const sorted = pts.map((p) => haversine(lat, lon, p.lat, p.lon)).sort((a, b) => a - b);
+    for (const k of [1, 2, 5, 13]) {
+      const hit = idx.kNearest(lat, lon, k, 1e6);
+      assert.ok(Math.abs(hit.dist - sorted[k - 1]) < 1e-6, `q=${q} k=${k}`);
+    }
+  }
+  assert.equal(new SpatialIndex(pts.slice(0, 2)).kNearest(52.5, 13.3, 3), null, 'zu wenige Punkte');
+  assert.equal(idx.kNearest(52.5, 13.3, 5, 1), null, 'maxDist');
+});

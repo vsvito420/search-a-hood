@@ -13,7 +13,7 @@ const b64url = {
   },
 };
 
-const KEYS = ['enabled', 'mode', 'distance', 'weight', 'required', 'openAtTime', 'showMarkers'];
+const KEYS = ['enabled', 'mode', 'distance', 'weight', 'required', 'openAtTime', 'showMarkers', 'minCount'];
 
 /** Nur Abweichungen von den Modul-Defaults speichern → kurze Links. */
 export function encodeState({ view, modules, settings, customDefs, distMode, time, candidates }) {

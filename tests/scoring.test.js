@@ -93,3 +93,16 @@ test('padBbox vergrößert um ~Meter', async () => {
   assert.ok(Math.abs(haversine(b.south, 13.4, 52.5, 13.4) - 500) < 5);
   assert.ok(Math.abs(haversine(52.5, b.west, 52.5, 13.4) - 500) < 5);
 });
+
+test('lostPoints erklärt den Abzug', async () => {
+  const { lostPoints } = await import('../src/ui/popups.js');
+  const parts = [
+    { module: { name: 'A' }, weight: 3, score: 1 },
+    { module: { name: 'B' }, weight: 1, score: 0 },
+    { module: { name: 'C' }, weight: 0, score: 0 },
+  ];
+  const l = lostPoints(parts);
+  assert.equal(l.length, 1);
+  assert.equal(l[0].part.module.name, 'B');
+  assert.equal(l[0].lost, 0.25);
+});

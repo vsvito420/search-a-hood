@@ -13,7 +13,8 @@
  * @property {boolean} [zone]       Radius um jeden Treffer als Kreis zeichnen (z. B. Bubatz-Sperrzone)
  * @property {(el:{tags:object}, ctx:object) => boolean} [filter] zusätzlicher Filter pro Treffer
  * @property {{enabled?:boolean, mode?:'near'|'far', distance?:number, weight?:number,
- *             required?:boolean, openAtTime?:boolean, showMarkers?:boolean}} [defaults]
+ *             required?:boolean, openAtTime?:boolean, showMarkers?:boolean, minCount?:number}} [defaults]
+ *   minCount > 1: nicht der nächste, sondern der k-nächste Treffer zählt ("mind. 3 Supermärkte in 800 m")
  */
 
 const BASE_DEFAULTS = {
@@ -24,6 +25,7 @@ const BASE_DEFAULTS = {
   required: false,
   openAtTime: false,
   showMarkers: true,
+  minCount: 1,
 };
 
 /** @param {ModuleDef} def */

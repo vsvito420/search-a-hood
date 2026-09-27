@@ -42,6 +42,7 @@ function moduleCard(m, s, count, { onChange, onDelete, onFocus, focusId }) {
         <option value="far" ${s.mode === 'far' ? 'selected' : ''}>weit weg ≥</option>
       </select>
       <label><input type="number" data-k="distance" min="10" max="10000" step="10" value="${s.distance}" /> m</label>
+      ${s.mode === 'near' ? `<label title="Mindestanzahl Treffer im Umkreis (1 = der nächste reicht)">mind. <input type="number" data-k="minCount" min="1" max="20" step="1" value="${s.minCount || 1}" class="tiny" /> ×</label>` : ''}
       <label title="Gewichtung im Gesamtscore">Gewicht <input type="range" data-k="weight" min="0" max="3" step="0.5" value="${s.weight}" /> <output>${s.weight}</output></label>
       <label title="Lagen, die das nicht erfüllen, werden grau ausgeschlossen"><input type="checkbox" data-k="required" ${s.required ? 'checked' : ''} /> Pflicht</label>
       ${m.supportsHours ? `<label title="Nur Treffer, die zum gewählten Zeitpunkt laut OSM geöffnet sind"><input type="checkbox" data-k="openAtTime" ${s.openAtTime ? 'checked' : ''} /> nur geöffnet</label>` : ''}
@@ -54,6 +55,7 @@ function moduleCard(m, s, count, { onChange, onDelete, onFocus, focusId }) {
     input.addEventListener(input.type === 'range' ? 'input' : 'change', () => {
       const v = read();
       if (k === 'distance' && !(v > 0)) return;
+      if (k === 'minCount' && !(v >= 1 && v <= 50)) return;
       if (k === 'weight') input.nextElementSibling.textContent = v;
       onChange(m.id, { [k]: v });
     });

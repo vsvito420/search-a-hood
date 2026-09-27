@@ -73,13 +73,19 @@ export function elementsToPoints(elements, geometry = 'point') {
 }
 
 const memCache = new Map();
+
+let customEndpoints = null;
+/** Eigene Overpass-Instanz(en) setzen (null = Standardliste). */
+export function setEndpoints(list) {
+  customEndpoints = list?.length ? list : null;
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Führt eine Abfrage aus. Bei Fehlern / Rate-Limit wird die nächste Instanz probiert,
  * nach einer vollen Runde mit Backoff noch einmal.
  */
-export async function runQuery(query, { signal, endpoints = ENDPOINTS, timeoutMs = 60_000, rounds = 2, fetchImpl = globalThis.fetch, onAttempt } = {}) {
+export async function runQuery(query, { signal, endpoints = customEndpoints || ENDPOINTS, timeoutMs = 60_000, rounds = 2, fetchImpl = globalThis.fetch, onAttempt } = {}) {
   if (memCache.has(query)) return memCache.get(query);
   let lastErr;
   for (let round = 0; round < rounds; round++) {

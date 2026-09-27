@@ -149,6 +149,11 @@
         </div>
       </section>
       <section>
+        <h2>Overpass-Instanz</h2>
+        <input id="overpass-url" type="url" placeholder="Standard: overpass-api.de → private.coffee → mail.ru" />
+        <p class="hint">Eigene Instanz (z. B. <code>http://localhost:12345/api/interpreter</code>) für große Gebiete ohne Fair-Use-Limit.</p>
+      </section>
+      <section>
         <h2>Overpass-Abfrage</h2>
         <p class="hint">Die kombinierte Abfrage der letzten Analyse – direkt in <a href="https://overpass-turbo.eu" target="_blank" rel="noopener">overpass-turbo</a> testbar.</p>
         <pre id="last-query" class="code">–</pre>
@@ -163,6 +168,7 @@
           <tr><td><kbd>W</kbd></td><td>Luftlinie ↔ Fußwege</td></tr>
           <tr><td><kbd>I</kbd></td><td>Isochrone am letzten Klickpunkt</td></tr>
           <tr><td><kbd>R</kbd></td><td>Relative Farbskala</td></tr>
+          <tr><td><kbd>T</kbd></td><td>Wochen-Zeitraffer (Leertaste = Play)</td></tr>
           <tr><td>◉ am Modul</td><td>Heatmap nur für dieses Kriterium</td></tr>
           <tr><td><kbd>Shift</kbd>+Klick</td><td>Kandidat an Position anlegen</td></tr>
           <tr><td><kbd>1</kbd>–<kbd>4</kbd></td><td>Tabs wechseln</td></tr>
@@ -187,6 +193,16 @@
       <label class="opacity">Heatmap <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.55" />
         <span title="Farbskala auf den sichtbaren Bereich strecken (R)"><input id="relative" type="checkbox" /> relativ</span></label>
       <button id="iso-btn" type="button" title="Isochrone: 5/10/15 min zu Fuß vom letzten Klickpunkt">⏱ Isochrone</button>
+      <button id="timeline-btn" type="button" title="Zeitraffer durch die Woche (T)">📅 Woche</button>
+    </div>
+    <div id="timeline" hidden>
+      <button id="tl-play" type="button" aria-label="Abspielen">▶</button>
+      <div class="tl-track">
+        <input id="tl-range" type="range" min="0" max="167" step="1" value="0" aria-label="Zeitpunkt in der Woche" />
+        <div class="tl-days"><span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span></div>
+      </div>
+      <output id="tl-label">Mo 00:00</output>
+      <button id="tl-close" type="button" class="link" aria-label="schließen">✕</button>
     </div>
     <div id="status" role="status" aria-live="polite"></div>
     <div id="results" hidden>

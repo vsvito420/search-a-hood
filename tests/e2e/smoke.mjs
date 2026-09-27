@@ -104,6 +104,51 @@ await step('Isochrone', async () => {
 });
 await snap('4-isochrone');
 
+await step('Steckbrief', async () => {
+  await page.evaluate(() => {
+    const { map } = window.searchAHood;
+    map.fire('click', { latlng: L.latLng(52.4990, 13.4175), originalEvent: new MouseEvent('click') });
+  });
+  const [report] = await Promise.all([ctx.waitForEvent('page'), click('[data-act="report"]')]);
+  await report.waitForLoadState('domcontentloaded');
+  const txt = `${await report.textContent('.score')} · ${await report.locator('tbody tr').count()} Kriterien`;
+  if (shot) await report.screenshot({ path: `${shot}-5-steckbrief.png`, fullPage: true });
+  await report.close();
+  return txt.replace(/\s+/g, ' ');
+});
+
+await step('Mind. 3 Supermärkte', async () => {
+  await page.evaluate(() => void window.searchAHood.map.closePopup());
+  await click('[data-tab="criteria"]');
+  const card = page.locator('.module.on', { hasText: 'Supermarkt' });
+  await card.locator('[data-k="minCount"]').fill('3');
+  await card.locator('[data-k="minCount"]').dispatchEvent('change');
+  await page.waitForTimeout(800);
+  const s = await status();
+  await card.locator('[data-k="minCount"]').fill('1');
+  await card.locator('[data-k="minCount"]').dispatchEvent('change');
+  return s.split('·').slice(0, 2).join('·').trim();
+});
+
+await step('Wochen-Zeitraffer', async () => {
+  await click('#timeline-btn');
+  const times = [];
+  for (const h of [3, 27, 99, 123]) {
+    const t0 = Date.now();
+    await page.$eval('#tl-range', (el, v) => {
+      el.value = v;
+      el.dispatchEvent(new Event('input'));
+    }, h);
+    await page.waitForFunction((lbl) => document.querySelector('#tl-label').textContent === lbl, ['Mo 03:00', 'Di 03:00', 'Fr 03:00', 'Sa 03:00'][times.length]);
+    await page.waitForTimeout(50);
+    const spaeti = await page.textContent('[data-count-for="spaeti"]');
+    times.push(`${await page.textContent('#tl-label')}: Späti ${spaeti} (${Date.now() - t0} ms)`);
+  }
+  await snap('6-zeitraffer');
+  await click('#tl-close');
+  return times.join(' | ');
+});
+
 await step('Befehlspalette', async () => {
   await page.keyboard.press('Control+K');
   await page.fill('#palette-input', 'bubatz');

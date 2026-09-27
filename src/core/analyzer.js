@@ -14,7 +14,8 @@ export const searchRadius = (s) => s.distance * 2;
 /** Bewertet einen einzelnen Punkt gegen alle aktiven Layer. */
 export function evaluatePoint(lat, lon, layers) {
   const parts = layers.map(({ module, settings, index }) => {
-    const hit = index.nearest(lat, lon, searchRadius(settings));
+    const k = settings.minCount || 1;
+    const hit = k > 1 && index.kNearest ? index.kNearest(lat, lon, k, searchRadius(settings)) : index.nearest(lat, lon, searchRadius(settings));
     const dist = hit ? hit.dist : Infinity;
     return {
       module,

@@ -44,15 +44,41 @@ export function reportPopup({ parts, score }, latlng, { walk = false } = {}) {
         : settings.mode === 'far'
           ? `> ${formatDist(settings.distance)}`
           : `> ${formatDist(settings.distance * 2)}`;
-      const goal = `${settings.mode === 'far' ? '≥' : '≤'} ${formatDist(settings.distance)}`;
+      const k = settings.mode === 'near' ? settings.minCount || 1 : 1;
+      const goal = `${k > 1 ? `${k}× ` : ''}${settings.mode === 'far' ? '≥' : '≤'} ${formatDist(settings.distance)}`;
       const how = walk && module.geometry !== 'line' && settings.mode !== 'far' ? '🚶' : '';
       return `<tr><td>${icon}</td><td>${esc(module.name)}${what ? `<br><small>${what}</small>` : ''}</td><td>${how}${d}<br><small>Ziel ${goal}</small></td></tr>`;
     })
     .join('');
   const total = score == null ? '<span class="bad">Pflichtkriterium verletzt</span>' : `${Math.round(score * 100)} %`;
+  const why = explain(parts, score);
   return `<div class="report">
     <div class="score">${total}</div>
     <small>${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)} · ${walk ? '🚶 Fußwege' : 'Luftlinie'}</small>
+    ${why}
     <table>${rows}</table>
   </div>`;
+}
+
+/**
+ * "Warum nicht 100 %?" – welche Kriterien kosten wie viele Prozentpunkte
+ * bzw. welche Pflichtkriterien schließen die Lage aus.
+ */
+export function lostPoints(parts) {
+  const W = parts.reduce((a, p) => a + (p.weight > 0 ? p.weight : 0), 0);
+  if (!W) return [];
+  return parts
+    .filter((p) => p.weight > 0 && p.score < 1)
+    .map((p) => ({ part: p, lost: (p.weight * (1 - p.score)) / W }))
+    .sort((a, b) => b.lost - a.lost);
+}
+
+function explain(parts, score) {
+  if (score == null) {
+    const broken = parts.filter((p) => p.required && !p.satisfied).map((p) => esc(p.module.name));
+    return `<p class="why bad">Ausgeschlossen durch: ${broken.join(', ')}</p>`;
+  }
+  const lost = lostPoints(parts).filter((l) => l.lost >= 0.005).slice(0, 3);
+  if (!lost.length) return '';
+  return `<p class="why">Abzug: ${lost.map((l) => `<b>−${Math.round(l.lost * 100)}</b> ${esc(l.part.module.name)}`).join(' · ')}</p>`;
 }
