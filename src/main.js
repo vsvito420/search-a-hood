@@ -2,10 +2,12 @@
 import { BUILTIN_MODULES, customModule } from './modules/index.js';
 import { PRESETS } from './presets.js';
 import { SpatialIndex } from './core/spatial-index.js';
-import { buildQuery, elementsToPoints, runQuery } from './core/overpass.js';
-import { analyzeArea, evaluatePoint } from './core/analyzer.js';
+import { elementsToPoints } from './core/overpass.js';
+import { DataStore } from './core/datastore.js';
+import { isValidSelector } from './core/tagfilter.js';
+import { analyzeArea, evaluatePoint, searchRadius } from './core/analyzer.js';
 import { scoreColor } from './core/scoring.js';
-import { bboxAreaKm2 } from './core/geo.js';
+import { bboxAreaKm2, padBbox } from './core/geo.js';
 import { loadHoursLib, isOpenAt } from './core/hours.js';
 import { renderModules, renderPresets, updateCounts } from './ui/panel.js';
 import { poiPopup, reportPopup, formatDist } from './ui/popups.js';
@@ -38,7 +40,7 @@ const state = {
   settings: {},
   time: new Date(),
   bbox: null, // analysiertes Gebiet
-  data: new Map(), // moduleId -> {key, elements} | {key, error}
+  data: new DataStore(),
   layers: new Map(), // moduleId -> ActiveLayer
   counts: {},
 };
@@ -102,7 +104,7 @@ function refreshPanel() {
       state.customDefs = state.customDefs.filter((d) => d.id !== id);
       store.set('custom', state.customDefs);
       delete state.settings[id];
-      state.data.delete(id);
+      state.data.drop(id);
       clearMarkers(id);
       loadModules();
       refreshPanel();
@@ -136,8 +138,8 @@ $('#custom-form').addEventListener('submit', (e) => {
     .split(';')
     .map((s) => s.trim())
     .filter(Boolean);
-  if (!query.length || !query.every((q) => /^\[.+\]$/.test(q))) {
-    setStatus('Filter müssen die Form [key=value] haben, z. B. [shop=bakery].', true);
+  if (!query.length || !query.every(isValidSelector)) {
+    setStatus('Ungültiger Filter. Erlaubt: [key], [key=value], [key!=value], [key~"regex"], mehrere mit ; trennen.', true);
     return;
   }
   const def = {
@@ -179,37 +181,17 @@ map.on('click', (e) => showReport(e.latlng));
 
 // ---------- Daten laden ----------
 const enabledModules = () => state.modules.filter((m) => state.settings[m.id]?.enabled);
-const bboxKey = (b) => [b.south, b.west, b.north, b.east].map((v) => v.toFixed(4)).join(',');
 
-async function fetchModule(module) {
-  const key = bboxKey(state.bbox);
-  const cached = state.data.get(module.id);
-  if (cached?.key === key && !cached.error) return;
-  try {
-    const elements = await runQuery(buildQuery(module.query, state.bbox, module.geometry));
-    state.data.set(module.id, { key, elements });
-  } catch (err) {
-    state.data.set(module.id, { key, error: err.message });
-  }
-}
-
-let fetching = false;
-async function fetchMissing() {
-  if (fetching || !state.bbox) return;
-  fetching = true;
-  try {
-    const key = bboxKey(state.bbox);
-    const todo = enabledModules().filter((m) => {
-      const d = state.data.get(m.id);
-      return !d || d.key !== key || d.error;
-    });
-    for (let i = 0; i < todo.length; i++) {
-      setStatus(`Lade ${todo[i].name} (${i + 1}/${todo.length}) …`);
-      await fetchModule(todo[i]);
-    }
-  } finally {
-    fetching = false;
-  }
+// Abfragen nacheinander ausführen, damit schnelle Klicks keine Doppel-Requests erzeugen.
+let queue = Promise.resolve();
+let loading = 0;
+function fetchMissing() {
+  loading++;
+  queue = queue
+    .then(() => state.data.ensure(enabledModules(), { onProgress: (msg) => setStatus(msg) }))
+    .catch((err) => setStatus(`Laden fehlgeschlagen: ${err.message}`, true))
+    .finally(() => loading--);
+  return queue;
 }
 
 async function analyze() {
@@ -225,7 +207,15 @@ async function analyze() {
     return;
   }
   state.bbox = bbox;
-  await fetchMissing();
+  // Daten mit Rand laden, sonst wirken Lagen am Rand besser als sie sind (POIs knapp außerhalb fehlen).
+  const pad = Math.min(1000, Math.max(...enabledModules().map((m) => searchRadius(state.settings[m.id]))));
+  state.data.setArea(padBbox(bbox, pad));
+  $('#analyze-btn').disabled = true;
+  try {
+    await fetchMissing();
+  } finally {
+    $('#analyze-btn').disabled = false;
+  }
   rebuild();
 }
 
@@ -253,8 +243,7 @@ function filterElements(module, settings, elements) {
 }
 
 function rebuild() {
-  if (!state.bbox) return;
-  const key = bboxKey(state.bbox);
+  if (!state.bbox || loading) return;
   state.layers.clear();
   state.counts = {};
   const errors = [];
@@ -263,10 +252,10 @@ function rebuild() {
     const s = state.settings[m.id];
     const d = state.data.get(m.id);
     clearMarkers(m.id);
-    if (!s?.enabled || !d || d.key !== key) continue;
+    if (!s?.enabled || !d) continue;
     if (d.error) {
       state.counts[m.id] = { error: d.error };
-      errors.push(m.name);
+      errors.push(m);
       continue;
     }
     const elements = filterElements(m, s, d.elements);
@@ -277,8 +266,17 @@ function rebuild() {
   }
   updateCounts($('#modules'), state.counts);
 
-  if (!state.layers.size) {
-    setStatus(errors.length ? `Laden fehlgeschlagen: ${errors.join(', ')}` : 'Keine Daten.', !!errors.length);
+  // Ein Pflichtmodul ohne Daten würde die Bewertung verfälschen → lieber gar keine Heatmap.
+  const brokenRequired = errors.filter((m) => state.settings[m.id].required);
+  if (brokenRequired.length || !state.layers.size) {
+    heatLayer?.remove();
+    $('#results').hidden = true;
+    setStatus(
+      errors.length
+        ? `Laden fehlgeschlagen: ${errors.map((m) => m.name).join(', ')}. ${brokenRequired.length ? 'Pflichtkriterium fehlt – keine Bewertung. ' : ''}Nochmal „analysieren“ klicken.`
+        : 'Keine Daten.',
+      true,
+    );
     return;
   }
 
@@ -290,7 +288,7 @@ function rebuild() {
   const pct = Math.round(res.coverage * 100);
   setStatus(
     `${res.grid.rows}×${res.grid.cols} Zellen in ${ms} ms bewertet · ${pct} % erfüllen alle Pflichtkriterien` +
-      (errors.length ? ` · Fehler bei: ${errors.join(', ')}` : ''),
+      (errors.length ? ` · ⚠ nicht geladen (ignoriert): ${errors.map((m) => m.name).join(', ')}` : ''),
     !!errors.length,
   );
 }

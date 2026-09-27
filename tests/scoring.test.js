@@ -77,3 +77,19 @@ test('alle Module haben eindeutige IDs und gültige Defaults', () => {
     assert.ok(m.defaults.distance > 0);
   }
 });
+
+test('Gleichstand: näher gewinnt über rank', async () => {
+  const { rankKey, comfort } = await import('../src/core/scoring.js');
+  const s = { mode: 'near', distance: 500, weight: 1 };
+  const a = rankKey([{ weight: 1, comfort: comfort(100, s) }], 1);
+  const b = rankKey([{ weight: 1, comfort: comfort(400, s) }], 1);
+  assert.ok(a > b);
+  assert.ok(a - 1 < 0.01, 'Feinwert verändert den Score kaum');
+});
+
+test('padBbox vergrößert um ~Meter', async () => {
+  const { padBbox, haversine } = await import('../src/core/geo.js');
+  const b = padBbox({ south: 52.5, west: 13.4, north: 52.51, east: 13.41 }, 500);
+  assert.ok(Math.abs(haversine(b.south, 13.4, 52.5, 13.4) - 500) < 5);
+  assert.ok(Math.abs(haversine(52.5, b.west, 52.5, 13.4) - 500) < 5);
+});

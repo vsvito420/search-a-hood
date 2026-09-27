@@ -66,3 +66,11 @@ export function makeGrid(bbox, cellMeters = 50, maxCells = 160) {
     },
   };
 }
+
+/** Vergrößert eine Bounding-Box um `meters` in alle Richtungen. */
+export function padBbox(bbox, meters) {
+  const m = metersPerDegree((bbox.south + bbox.north) / 2);
+  const dLat = meters / m.lat;
+  const dLon = meters / m.lon;
+  return { south: bbox.south - dLat, west: bbox.west - dLon, north: bbox.north + dLat, east: bbox.east + dLon };
+}

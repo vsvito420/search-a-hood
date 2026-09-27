@@ -1,4 +1,5 @@
 import { densify } from './geo.js';
+import { compileSelectors } from './tagfilter.js';
 
 // Öffentliche Overpass-Instanzen. Bitte fair nutzen (kleine Gebiete, Cache).
 export const ENDPOINTS = [
@@ -8,14 +9,46 @@ export const ENDPOINTS = [
 ];
 
 const round = (v) => Math.round(v * 1e4) / 1e4;
+const bboxStr = (b) => [b.south, b.west, b.north, b.east].map(round).join(',');
 
-/** Baut eine Overpass-QL-Abfrage aus Tag-Filtern wie `[amenity=fuel]`. */
+/** Einfache Abfrage für EIN Modul (wird von der CLI/Tests genutzt). */
 export function buildQuery(selectors, bbox, geometry = 'point') {
-  const b = [bbox.south, bbox.west, bbox.north, bbox.east].map(round).join(',');
   const type = geometry === 'line' ? 'way' : 'nwr';
-  const parts = selectors.map((sel) => `${type}${sel}(${b});`).join('');
+  const parts = selectors.map((sel) => `${type}${sel}(${bboxStr(bbox)});`).join('');
   const out = geometry === 'line' ? 'out tags geom;' : 'out tags center;';
   return `[out:json][timeout:90];(${parts});${out}`;
+}
+
+/**
+ * EINE Abfrage für beliebig viele Module: Punkt-Module bekommen Mittelpunkte,
+ * Linien-Module die komplette Geometrie. Doppelte Selektoren werden zusammengefasst.
+ */
+export function buildCombinedQuery(modules, bbox) {
+  const b = bboxStr(bbox);
+  const pts = new Set();
+  const lines = new Set();
+  for (const m of modules) for (const s of m.query) (m.geometry === 'line' ? lines : pts).add(s);
+  let q = '[out:json][timeout:120];';
+  if (pts.size) q += `(${[...pts].map((s) => `nwr${s}(${b});`).join('')})->.p;.p out tags center;`;
+  if (lines.size) q += `(${[...lines].map((s) => `way${s}(${b});`).join('')})->.l;.l out tags geom;`;
+  return q;
+}
+
+/**
+ * Verteilt die Elemente einer kombinierten Abfrage auf die Module.
+ * @returns {Map<string, object[]>} moduleId -> Elemente
+ */
+export function classify(elements, modules) {
+  const out = new Map(modules.map((m) => [m.id, []]));
+  const matchers = modules.map((m) => [m, compileSelectors(m.query)]);
+  for (const el of elements) {
+    const isLine = Array.isArray(el.geometry);
+    for (const [m, match] of matchers) {
+      if ((m.geometry === 'line') !== isLine) continue;
+      if (match(el.tags)) out.get(m.id).push(el);
+    }
+  }
+  return out;
 }
 
 /**
@@ -40,27 +73,38 @@ export function elementsToPoints(elements, geometry = 'point') {
 }
 
 const memCache = new Map();
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Führt eine Abfrage aus und probiert bei Fehlern die nächste Instanz. */
-export async function runQuery(query, { signal, endpoints = ENDPOINTS, timeoutMs = 45_000 } = {}) {
+/**
+ * Führt eine Abfrage aus. Bei Fehlern / Rate-Limit wird die nächste Instanz probiert,
+ * nach einer vollen Runde mit Backoff noch einmal.
+ */
+export async function runQuery(query, { signal, endpoints = ENDPOINTS, timeoutMs = 60_000, rounds = 2, fetchImpl = globalThis.fetch, onAttempt } = {}) {
   if (memCache.has(query)) return memCache.get(query);
   let lastErr;
-  for (const url of endpoints) {
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        body: new URLSearchParams({ data: query }),
-        // Eigenes Timeout pro Instanz, damit eine hängende Instanz nicht alles blockiert.
-        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
-      });
-      if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-      const json = await res.json();
-      const elements = json.elements || [];
-      memCache.set(query, elements);
-      return elements;
-    } catch (e) {
-      if (signal?.aborted) throw e;
-      lastErr = e;
+  for (let round = 0; round < rounds; round++) {
+    if (round) await sleep(2000 * round);
+    for (const url of endpoints) {
+      onAttempt?.(url, round);
+      try {
+        const res = await fetchImpl(url, {
+          method: 'POST',
+          body: new URLSearchParams({ data: query }),
+          // Eigenes Timeout pro Instanz, damit eine hängende Instanz nicht alles blockiert.
+          signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
+        });
+        if (!res.ok) throw new Error(`${new URL(url).host}: HTTP ${res.status}`);
+        const json = await res.json();
+        if (json.remark && /runtime error|timed out|out of memory/i.test(json.remark)) {
+          throw new Error(`${new URL(url).host}: ${json.remark}`);
+        }
+        const elements = json.elements || [];
+        memCache.set(query, elements);
+        return elements;
+      } catch (e) {
+        if (signal?.aborted) throw e;
+        lastErr = e;
+      }
     }
   }
   throw lastErr || new Error('Keine Overpass-Instanz erreichbar');

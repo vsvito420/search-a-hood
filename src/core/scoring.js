@@ -15,6 +15,15 @@ export function moduleScore(dist, { mode, distance }) {
   return Math.max(0, 1 - (dist - distance) / distance);
 }
 
+/**
+ * Feinwert für Gleichstände: Bei zwei Lagen mit 100 % gewinnt die, bei der alles noch näher
+ * bzw. Störendes noch weiter weg ist. 0..1, fließt nur minimal in den Score ein.
+ */
+export function comfort(dist, { mode, distance }) {
+  if (mode === 'far') return Math.min(dist, distance * 2) / (distance * 2);
+  return Math.max(0, 1 - dist / (distance * 2));
+}
+
 /** Ist die Bedingung eines Moduls komplett erfüllt? */
 export function isSatisfied(dist, { mode, distance }) {
   return mode === 'far' ? dist >= distance : dist <= distance;
@@ -36,6 +45,19 @@ export function combine(parts) {
   }
   if (wsum === 0) return parts.length ? 1 : null;
   return sum / wsum;
+}
+
+/** Wie combine(), aber als Sortierschlüssel mit Gleichstands-Auflösung über comfort. */
+export function rankKey(parts, score) {
+  if (score == null) return -1;
+  let c = 0;
+  let w = 0;
+  for (const p of parts) {
+    if (p.weight <= 0 || p.comfort == null) continue;
+    c += p.comfort * p.weight;
+    w += p.weight;
+  }
+  return score + (w ? c / w : 0) * 1e-3;
 }
 
 /** Farbskala rot → gelb → grün als [r,g,b]. */
@@ -62,7 +84,7 @@ export function scoreColor(score) {
  * @param {{lat:number, lon:number, score:number}[]} cells
  */
 export function pickTopSpots(cells, count, minSeparation, distFn) {
-  const sorted = cells.filter((c) => c.score != null).sort((a, b) => b.score - a.score);
+  const sorted = cells.filter((c) => c.score != null).sort((a, b) => (b.rank ?? b.score) - (a.rank ?? a.score));
   const picked = [];
   for (const c of sorted) {
     if (picked.length >= count) break;

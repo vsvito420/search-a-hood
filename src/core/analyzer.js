@@ -1,5 +1,5 @@
 import { makeGrid, haversine } from './geo.js';
-import { moduleScore, isSatisfied, combine, pickTopSpots } from './scoring.js';
+import { moduleScore, isSatisfied, combine, pickTopSpots, comfort, rankKey } from './scoring.js';
 
 /**
  * @typedef {object} ActiveLayer
@@ -8,8 +8,8 @@ import { moduleScore, isSatisfied, combine, pickTopSpots } from './scoring.js';
  * @property {import('./spatial-index.js').SpatialIndex} index
  */
 
-/** Suchradius: weit genug, um den Score-Verlauf abzubilden. */
-const searchRadius = (s) => (s.mode === 'far' ? s.distance : s.distance * 2);
+/** Suchradius: weit genug, um Score und Feinwert (comfort) abzubilden. */
+export const searchRadius = (s) => s.distance * 2;
 
 /** Bewertet einen einzelnen Punkt gegen alle aktiven Layer. */
 export function evaluatePoint(lat, lon, layers) {
@@ -23,11 +23,13 @@ export function evaluatePoint(lat, lon, layers) {
       dist,
       score: moduleScore(dist, settings),
       satisfied: isSatisfied(dist, settings),
+      comfort: comfort(dist, settings),
       weight: settings.weight,
       required: settings.required,
     };
   });
-  return { parts, score: combine(parts) };
+  const score = combine(parts);
+  return { parts, score, rank: rankKey(parts, score) };
 }
 
 /**
@@ -41,9 +43,9 @@ export function analyzeArea(bbox, layers, { cellMeters = 50, maxCells = 160, top
   for (let r = 0; r < grid.rows; r++) {
     for (let c = 0; c < grid.cols; c++) {
       const { lat, lon } = grid.center(r, c);
-      const { score } = evaluatePoint(lat, lon, layers);
+      const { score, rank } = evaluatePoint(lat, lon, layers);
       scores[r * grid.cols + c] = score == null ? NaN : score;
-      if (score != null) cells.push({ lat, lon, score });
+      if (score != null) cells.push({ lat, lon, score, rank });
     }
   }
   const top = pickTopSpots(cells, topCount, 300, haversine);
