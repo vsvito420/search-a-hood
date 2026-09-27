@@ -30,7 +30,7 @@ const BASE_DEFAULTS = {
 
 /** @param {ModuleDef} def */
 export function defineModule(def) {
-  if (!def.id || !def.name || !Array.isArray(def.query) || !def.query.length) {
+  if (!def.id || !def.name || (def.kind !== 'target' && (!Array.isArray(def.query) || !def.query.length))) {
     throw new Error(`Ungültiges Modul: ${JSON.stringify(def)}`);
   }
   return {
@@ -40,6 +40,8 @@ export function defineModule(def) {
     supportsHours: false,
     zone: false,
     description: '',
+    query: [],
+    unit: 'm',
     ...def,
     defaults: { ...BASE_DEFAULTS, ...def.defaults },
   };

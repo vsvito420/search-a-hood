@@ -1,5 +1,6 @@
 // Modul-Registry. Neues Kriterium = neue Datei + eine Zeile hier.
 import { defineModule } from './define.js';
+import { COMMUTE_MODES } from '../core/commute.js';
 import fuel247 from './fuel-247.js';
 import spaeti from './spaeti.js';
 import supermarket from './supermarket.js';
@@ -72,5 +73,22 @@ export function customModule({ id, name, query, color, supportsHours, geometry }
     geometry: geometry === 'line' ? 'line' : 'point',
     custom: true,
     defaults: { enabled: true },
+  });
+}
+
+/** Persönliches Ziel (Arbeit, Uni, …) als Modul: Einheit Minuten, Daten kommen vom Routing statt von Overpass. */
+export function targetModule(t) {
+  const m = COMMUTE_MODES[t.mode] || COMMUTE_MODES.bike;
+  return defineModule({
+    id: `target-${t.id}`,
+    name: `${m.icon} ${t.name}`,
+    category: 'Meine Ziele',
+    color: '#e91e63',
+    description: `${m.label} zu „${t.name}“${t.mode === 'transit' ? `, Ankunft werktags ${t.arrive || '08:30'}` : ''}. Quelle: ${t.mode === 'transit' ? 'Transitous (MOTIS)' : 'FOSSGIS-OSRM'}.`,
+    kind: 'target',
+    unit: 'min',
+    target: t,
+    custom: true,
+    defaults: { enabled: true, mode: 'near', distance: t.minutes || 20, weight: 2, showMarkers: false },
   });
 }

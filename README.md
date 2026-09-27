@@ -19,6 +19,7 @@
 | 🧩 **Module** | 28 Kriterien in 9 Kategorien. Eigene Module legst du per Overpass-Filter direkt in der UI an, ohne Code. |
 | 🎯 **Scoring** | „nah dran ≤ X m“ oder „weit weg ≥ X m“, Gewicht 0–3, Pflichtkriterien, „mind. N im Umkreis“ (k-nächster Treffer) |
 | 🚶 **Echte Fußwege** | Das Wegenetz wird als Graph im Browser aufgebaut, pro Modul läuft ein Multi-Source-Dijkstra. Flüsse, Gleise und Autobahnen ohne Übergang zählen dann als Umweg. |
+| 🎯 **Pendel-Check** | „Arbeit ≤ 25 min mit ÖPNV“, „Uni ≤ 20 min mit dem Rad“ wird zum Kriterium wie jedes andere. Rad, Fuß und Auto kommen von FOSSGIS-OSRM, ÖPNV von Transitous (MOTIS) mit echtem Fahrplan und Ankunftszeit. |
 | ⏱ **Isochronen** | Was ist in 5/10/15 Minuten zu Fuß erreichbar? Die Darstellung ist ein Netz aus Straßensegmenten. |
 | 🕒 **Öffnungszeiten** | Mit „nur geöffnet“ zählen nur Treffer, die zum gewählten Zeitpunkt offen sind. Schnellwahl für Fr 23 Uhr, 3 Uhr nachts usw. |
 | 📅 **Wochen-Zeitraffer** | Mit dem Slider oder ▶ gehst du stundenweise durch die Woche, die Heatmap rechnet live mit. |
@@ -98,6 +99,14 @@ node bin/search-a-hood.mjs score "Oranienstraße 185, Berlin" "Wiener Straße 10
 ```
 
 ```bash
+# Pendel-Ziele: ÖPNV mit Ankunft 08:30 am nächsten Werktag, Rad per OSRM
+node bin/search-a-hood.mjs score "Oranienstraße 185, Berlin" "Schillerpromenade 20, Berlin" -m supermarket \
+  -g "Arbeit|Alexanderplatz, Berlin|transit|25" -g "Uni|Ernst-Reuter-Platz, Berlin|bike|25"
+#1 Oranienstraße 185, Kreuzberg, Berlin      Score 88 %
+   ✔ Supermarkt   60 m (1 min)   ✔ 🚆 Arbeit   18 min   · 🚲 Uni   33 min
+#2 Schillerpromenade 20, Neukölln, Berlin    Score 75 %
+   ✔ Supermarkt  313 m (4 min)   · 🚆 Arbeit   29 min   · 🚲 Uni   38 min
+
 # Fußwege, Zeitpunkt Samstag 3 Uhr, eigene Einstellungen, JSON für jq
 node bin/search-a-hood.mjs score 52.4986,13.418 -p nachteule --walk -t 2026-10-03T03:00 \
   -s spaeti.distance=300 -s supermarket.minCount=2 --json | jq '.results[0].score'
@@ -106,7 +115,7 @@ node bin/search-a-hood.mjs modules     # alle Module mit Defaults
 node bin/search-a-hood.mjs presets
 ```
 
-Optionen: `--preset/-p`, `--modules/-m a,b,c`, `--set/-s modul.key=wert` (mehrfach), `--walk/-w`, `--time/-t ISO`, `--json`, `--overpass URL` (oder `OVERPASS_URL`). Hinter einem HTTP-Proxy setzt du `NODE_USE_ENV_PROXY=1`.
+Optionen: `--preset/-p`, `--modules/-m a,b,c`, `--set/-s modul.key=wert` (mehrfach), `--goal/-g "Name|Adresse|bike/transit/foot/car|Minuten"` (mehrfach), `--arrive hh:mm`, `--walk/-w`, `--time/-t ISO`, `--json`, `--overpass URL` (oder `OVERPASS_URL`). Hinter einem HTTP-Proxy setzt du `NODE_USE_ENV_PROXY=1`.
 
 ---
 
@@ -122,6 +131,8 @@ Optionen: `--preset/-p`, `--modules/-m a,b,c`, `--set/-s modul.key=wert` (mehrfa
 **Gesamtscore:** gewichteter Mittelwert. Ist ein Pflichtkriterium verletzt, wird die Lage ausgeschlossen. Bei Gleichstand gewinnt die Lage, bei der alles noch näher bzw. Störendes noch weiter weg ist.
 
 **Fußwege:** `highway=footway|path|residential|…` ohne `foot=no` wird zu einem CSR-Graph. Isolierte Mini-Komponenten wie Wege in Innenhöfen werden verworfen. Pro Modul läuft **ein** Multi-Source-Dijkstra von allen POIs aus, dann kennt jeder Knoten die Gehdistanz zum nächsten POI. Jede Rasterzelle wird auf den nächsten Knoten gesnappt. In Kreuzberg sind das rund 38.000 Knoten, und die komplette Heatmap in Fußwegen dauert etwa 100 ms. Lärm- und Sichtweiten-Kriterien (Linien, „weit weg“) bleiben bewusst bei der Luftlinie.
+
+**Pendeln:** Für Rad, Fuß und Auto fragt eine einzige OSRM-Table-Anfrage die Reisezeit zum Ziel von einem 9×9-Stützraster über dem Gebiet ab. Dazwischen wird bilinear interpoliert, denn Reisezeit ändert sich räumlich glatt. Für den ÖPNV liefert Transitous `one-to-all` mit `arriveBy` alle Haltestellen, von denen man rechtzeitig ankommt. Jede Zelle nimmt dann das Minimum aus „Fahrzeit ab Haltestelle + Fußweg dorthin“ und „direkt zu Fuß“. Ein Ziel ist technisch ein Modul mit der Einheit Minuten, deshalb funktionieren Gewicht, Pflicht, Einzelansicht, Report, Vergleichstabelle und CLI automatisch.
 
 **Öffnungszeiten:** Primär wird [opening_hours.js](https://github.com/opening-hours/opening_hours.js) verwendet, lazy geladen und mit Feiertagen. Fällt das aus, übernimmt ein eingebauter Parser (`src/core/oh-lite.js`) die gängigen Muster: Tagesbereiche, Mittagspausen, Zeiten über Mitternacht, `off`, `24/7`. Kann er einen Wert nicht sicher auswerten, gilt er als unbekannt, er wird nie geraten.
 
@@ -208,6 +219,21 @@ GitHub Actions führt Syntax-Check und Unit-Tests auf Node 20 und 22 aus (`.gith
 - Mietspiegel, Bodenrichtwerte (BORIS-D), Hochwasser-Gefahrenkarten
 - Ookla Open Data (gemessene Bandbreite je Kachel) als Internet-Modul
 - Beobachtungsliste: CLI + Cron + neue Inserate → Benachrichtigung bei Score > X
+
+## Datenquellen
+
+| Quelle | Wofür | Hinweis |
+|---|---|---|
+| [OpenStreetMap](https://www.openstreetmap.org) via [Overpass API](https://overpass-api.de) | POIs, Wegenetz | ODbL, Fair Use, eigene Instanz einstellbar |
+| [Nominatim](https://nominatim.org) | Adresssuche | max. 1 Anfrage/s, Ergebnisse gecacht |
+| [FOSSGIS-OSRM](https://routing.openstreetmap.de) | Reisezeiten Rad/Fuß/Auto | Table-Service, 1 Anfrage pro Ziel und Gebiet |
+| [Transitous](https://transitous.org) (MOTIS) | ÖPNV-Reisezeiten | Community-Projekt, bitte sparsam nutzen |
+| [Breitbandatlas BNetzA](https://gigabitgrundbuch.bund.de) | Breitband/Glasfaser (WMS) | amtliche Daten |
+| [opening_hours.js](https://github.com/opening-hours/opening_hours.js) | Öffnungszeiten inkl. Feiertage | lazy geladen, sonst eigener Parser |
+
+## Sicherheit
+
+Alle Fremddaten werden vor dem Einfügen ins HTML escaped: OSM-Tags, Permalinks, importierte Configs, WMS-Antworten. Links werden nur mit `http(s)` gesetzt. Leaflet wird mit SRI-Hash geladen und fällt bei Ausfall auf ein zweites CDN zurück.
 
 ## Lizenz & Daten
 

@@ -1,4 +1,4 @@
-import { esc, formatDist } from './popups.js';
+import { esc, fmtValue, safeUrl } from './popups.js';
 import { pricePerSqm } from '../core/candidates.js';
 import { scoreColor } from '../core/scoring.js';
 
@@ -33,7 +33,7 @@ export function renderCandidateTable(root, rows, { sortKey, sortDir, onSort, onF
     const ppsqm = pricePerSqm(c);
     return [
       `<td class="num">${r.idx + 1}</td>`,
-      `<td class="addr" title="${esc(c.display || c.label)}">${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">${esc(c.label)}</a>` : esc(c.label)}${
+      `<td class="addr" title="${esc(c.display || c.label)}">${safeUrl(c.url) ? `<a href="${esc(safeUrl(c.url))}" target="_blank" rel="noopener noreferrer">${esc(c.label)}</a>` : esc(c.label)}${
         c.lat == null ? `<br><small class="bad">${esc(c.error || 'nicht gefunden')}</small>` : ''
       }</td>`,
       `<td>${ev ? chip(ev.score) : chip(undefined)}</td>`,
@@ -43,7 +43,7 @@ export function renderCandidateTable(root, rows, { sortKey, sortDir, onSort, onF
         const p = byId.get(m.id);
         if (!p) return '<td class="muted">–</td>';
         const cls = p.satisfied ? 'ok' : p.required ? 'bad' : 'warn';
-        return `<td class="${cls}" title="${esc(p.hit?.item?.tags?.name || '')}">${p.hit ? formatDist(p.dist) : p.settings.mode === 'far' ? '✔ weit' : '✘'}</td>`;
+        return `<td class="${cls}" title="${esc(p.hit?.item?.tags?.name || '')}">${p.hit ? fmtValue(m, p.dist) : p.settings.mode === 'far' ? '✔ weit' : '✘'}</td>`;
       }),
       `<td><button class="del" type="button" data-del="${r.idx}" title="entfernen">✕</button></td>`,
     ].join('');

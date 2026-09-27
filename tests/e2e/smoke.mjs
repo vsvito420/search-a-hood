@@ -14,7 +14,7 @@ const browser = await chromium.launch(process.env.HTTPS_PROXY ? { args: [`--prox
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: true });
 await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
 const page = await ctx.newPage();
-page.on('pageerror', (e) => errors.push(e.message));
+page.on('pageerror', (e) => (errors.push(e.message), console.error(`\n  ⚠ Seitenfehler: ${e.message}`)));
 
 if (process.env.OVERPASS_VIA_CURL) {
   await page.route(/\/api\/interpreter/, async (route) => {
@@ -22,6 +22,18 @@ if (process.env.OVERPASS_VIA_CURL) {
     if (process.env.DEBUG) console.log('  overpass ←', data.slice(0, 120));
     try {
       const out = execFileSync('curl', ['-s', '-m', '150', '--data-urlencode', 'data@-', MIRROR], { input: data, maxBuffer: 512 << 20 });
+      await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: out });
+    } catch (e) {
+      await route.fulfill({ status: 502, headers: { 'access-control-allow-origin': '*' }, body: String(e) });
+    }
+  });
+}
+
+if (process.env.OVERPASS_VIA_CURL) {
+  // Routing (FOSSGIS-OSRM) ebenfalls per curl – GET-Anfragen 1:1 durchreichen
+  await page.route(/routing\.openstreetmap\.de/, async (route) => {
+    try {
+      const out = execFileSync('curl', ['-s', '-m', '60', route.request().url()], { maxBuffer: 64 << 20 });
       await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: out });
     } catch (e) {
       await route.fulfill({ status: 502, headers: { 'access-control-allow-origin': '*' }, body: String(e) });
@@ -147,6 +159,30 @@ await step('Wochen-Zeitraffer', async () => {
   await snap('6-zeitraffer');
   await click('#tl-close');
   return times.join(' | ');
+});
+
+await step('Pendel-Ziele (Rad + ÖPNV)', async () => {
+  await click('[data-tab="criteria"]');
+  const add = async (name, addr, mode, minutes) => {
+    await page.fill('#target-form [name="name"]', name);
+    await page.fill('#target-form [name="addr"]', addr);
+    await page.selectOption('#target-form [name="mode"]', mode);
+    await page.fill('#target-form [name="minutes"]', String(minutes));
+    await click('#target-form button');
+    await page.waitForFunction((n) => [...document.querySelectorAll('.module.on')].some((el) => el.textContent.includes(n)), name);
+  };
+  await add('Arbeit', '52.5219, 13.4132', 'transit', 20);
+  await add('Uni', '52.5125, 13.3269', 'bike', 25);
+  await waitStatus(/Zellen|fehlgeschlagen/);
+  const counts = await page.$$eval('.module.on', (els) => els.filter((e) => /Arbeit|Uni/.test(e.textContent)).map((e) => e.querySelector('.count').textContent).join(' / '));
+  await page.evaluate(() => {
+    const { map } = window.searchAHood;
+    map.fire('click', { latlng: L.latLng(52.4990, 13.4175), originalEvent: new MouseEvent('click') });
+  });
+  await page.waitForSelector('.leaflet-popup-content .score');
+  const rows = await page.$$eval('.leaflet-popup-content tr', (trs) => trs.filter((t) => /Arbeit|Uni/.test(t.textContent)).map((t) => t.textContent.replace(/\s+/g, ' ').trim()));
+  await snap('7-pendeln');
+  return `${counts} · ${rows.join(' | ')}`;
 });
 
 await step('Befehlspalette', async () => {

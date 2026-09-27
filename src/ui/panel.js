@@ -37,16 +37,20 @@ function moduleCard(m, s, count, { onChange, onDelete, onFocus, focusId }) {
     </div>
     <div class="opts">
       ${m.description ? `<p class="desc">${esc(m.description)}</p>` : ''}
-      <select data-k="mode" aria-label="Richtung">
+      ${
+        m.unit === 'min'
+          ? `<label>max. <input type="number" data-k="distance" min="1" max="120" step="1" value="${s.distance}" class="tiny" /> min</label>`
+          : `<select data-k="mode" aria-label="Richtung">
         <option value="near" ${s.mode === 'near' ? 'selected' : ''}>nah dran ≤</option>
         <option value="far" ${s.mode === 'far' ? 'selected' : ''}>weit weg ≥</option>
       </select>
-      <label><input type="number" data-k="distance" min="10" max="10000" step="10" value="${s.distance}" /> m</label>
-      ${s.mode === 'near' ? `<label title="Mindestanzahl Treffer im Umkreis (1 = der nächste reicht)">mind. <input type="number" data-k="minCount" min="1" max="20" step="1" value="${s.minCount || 1}" class="tiny" /> ×</label>` : ''}
+      <label><input type="number" data-k="distance" min="10" max="10000" step="10" value="${s.distance}" /> m</label>`
+      }
+      ${s.mode === 'near' && m.unit !== 'min' ? `<label title="Mindestanzahl Treffer im Umkreis (1 = der nächste reicht)">mind. <input type="number" data-k="minCount" min="1" max="20" step="1" value="${s.minCount || 1}" class="tiny" /> ×</label>` : ''}
       <label title="Gewichtung im Gesamtscore">Gewicht <input type="range" data-k="weight" min="0" max="3" step="0.5" value="${s.weight}" /> <output>${s.weight}</output></label>
       <label title="Lagen, die das nicht erfüllen, werden grau ausgeschlossen"><input type="checkbox" data-k="required" ${s.required ? 'checked' : ''} /> Pflicht</label>
       ${m.supportsHours ? `<label title="Nur Treffer, die zum gewählten Zeitpunkt laut OSM geöffnet sind"><input type="checkbox" data-k="openAtTime" ${s.openAtTime ? 'checked' : ''} /> nur geöffnet</label>` : ''}
-      <label><input type="checkbox" data-k="showMarkers" ${s.showMarkers ? 'checked' : ''} /> Marker</label>
+      ${m.unit === 'min' ? '' : `<label><input type="checkbox" data-k="showMarkers" ${s.showMarkers ? 'checked' : ''} /> Marker</label>`}
     </div>`;
 
   el.querySelectorAll('[data-k]').forEach((input) => {
@@ -76,6 +80,11 @@ function setCount(span, count) {
   if (!count) {
     span.textContent = '';
     span.title = '';
+    return;
+  }
+  if (count.label) {
+    span.textContent = count.label;
+    span.title = count.title || '';
     return;
   }
   // Datenqualität: Wie viele Treffer haben überhaupt Öffnungszeiten in OSM?

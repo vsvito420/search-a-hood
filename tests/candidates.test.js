@@ -46,6 +46,7 @@ test('Permalink Roundtrip', () => {
     modules: BUILTIN_MODULES,
     settings,
     customDefs: [{ id: 'custom-x', name: 'Döner', query: ['[cuisine~"kebab"]'] }],
+    targets: [{ id: 't1', name: 'Arbeit', lat: 52.5219, lon: 13.4132, mode: 'transit', minutes: 25, arrive: '08:30' }],
     distMode: 'walk',
     time: '2026-09-27T23:00',
     candidates: [{ label: 'Ä-Straße 1', lat: 52.1, lon: 13.2, rent: 900, size: 50, url: null }, { label: 'ungeocodet' }],
@@ -58,6 +59,7 @@ test('Permalink Roundtrip', () => {
   assert.equal(dec.candidates.length, 1);
   assert.equal(dec.candidates[0].label, 'Ä-Straße 1');
   assert.equal(dec.customDefs[0].name, 'Döner');
+  assert.deepEqual(dec.targets[0], { id: 't1', name: 'Arbeit', lat: 52.5219, lon: 13.4132, mode: 'transit', minutes: 25, arrive: '08:30' });
   assert.deepEqual(dec.view, { center: [52.5, 13.4], zoom: 15 });
 });
 

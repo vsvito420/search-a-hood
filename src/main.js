@@ -1,5 +1,5 @@
 /* global L */
-import { BUILTIN_MODULES, customModule } from './modules/index.js';
+import { BUILTIN_MODULES, customModule, targetModule } from './modules/index.js';
 import { PRESETS } from './presets.js';
 import { store } from './app/store.js';
 import { encodeState, decodeState } from './app/permalink.js';
@@ -19,6 +19,12 @@ import { OverlayManager } from './ui/overlays.js';
 import { renderCandidateTable, sortValue } from './ui/candidates.js';
 import { createPalette } from './ui/palette.js';
 import { buildReportHtml, openReport } from './ui/report.js';
+import { osrmField, transitField, CommuteIndex, COMMUTE_MODES } from './core/commute.js';
+
+if (!window.L) {
+  document.getElementById('status').textContent = 'Kartenbibliothek (Leaflet) konnte nicht geladen werden – Netzwerk/Adblocker prüfen und neu laden.';
+  throw new Error('Leaflet fehlt');
+}
 
 const MAX_AREA_KM2 = 60;
 const MAX_WALK_AREA_KM2 = 30;
@@ -28,6 +34,7 @@ const MAX_WALK_AREA_KM2 = 30;
 // =====================================================================
 const state = {
   customDefs: store.get('custom', []),
+  targets: store.get('targets', []), // persönliche Ziele (Pendeln)
   modules: [],
   settings: {},
   time: new Date(),
@@ -45,8 +52,9 @@ const state = {
   relative: store.get('relative', false),
 };
 
+const allModules = () => [...BUILTIN_MODULES, ...state.customDefs.map(customModule), ...state.targets.map(targetModule)];
 function loadModules() {
-  state.modules = [...BUILTIN_MODULES, ...state.customDefs.map(customModule)];
+  state.modules = allModules();
   const saved = store.get('settings', {});
   for (const m of state.modules) {
     state.settings[m.id] = { ...m.defaults, ...saved[m.id], ...state.settings[m.id] };
@@ -62,10 +70,11 @@ try {
 }
 if (fromLink) {
   state.customDefs = fromLink.customDefs;
+  state.targets = fromLink.targets || [];
   state.distMode = fromLink.distMode;
   if (fromLink.time) state.time = new Date(fromLink.time);
   if (fromLink.candidates.length) state.candidates = fromLink.candidates;
-  state.modules = [...BUILTIN_MODULES, ...state.customDefs.map(customModule)];
+  state.modules = allModules();
   for (const m of state.modules) state.settings[m.id] = { ...m.defaults, ...fromLink.settings[m.id] };
 }
 loadModules();
@@ -73,6 +82,8 @@ loadModules();
 const saveSettings = () => store.set('settings', state.settings);
 const saveCandidates = () => store.set('candidates', state.candidates);
 const enabledModules = () => state.modules.filter((m) => state.settings[m.id]?.enabled);
+/** Module, deren Daten aus Overpass kommen (Ziele kommen vom Routing). */
+const dataModules = () => enabledModules().filter((m) => m.kind !== 'target');
 
 // =====================================================================
 // Karte
@@ -98,6 +109,7 @@ if (fromLink) history.replaceState(null, '', location.pathname + location.search
 
 const markerGroups = new Map(); // moduleId -> L.LayerGroup
 const candLayer = L.layerGroup().addTo(map);
+const targetLayer = L.layerGroup().addTo(map);
 let heatLayer = null;
 let areaOutline = null;
 let isoLayer = null;
@@ -171,6 +183,9 @@ function refreshPanel() {
     onDelete(id) {
       state.customDefs = state.customDefs.filter((d) => d.id !== id);
       store.set('custom', state.customDefs);
+      state.targets = state.targets.filter((t) => `target-${t.id}` !== id);
+      store.set('targets', state.targets);
+      drawTargets();
       delete state.settings[id];
       state.data.drop(id);
       clearMarkers(id);
@@ -312,8 +327,9 @@ function fetchMissing() {
   loading++;
   queue = queue
     .then(async () => {
-      await state.data.ensure(enabledModules(), { onProgress: (msg) => setStatus(msg) });
+      await state.data.ensure(dataModules(), { onProgress: (msg) => setStatus(msg) });
       if (state.distMode === 'walk' && state.data.bbox) await ensureGraph();
+      await ensureCommutes();
     })
     .catch((err) => setStatus(`Laden fehlgeschlagen: ${err.message}`, true))
     .finally(() => loading--);
@@ -339,6 +355,93 @@ async function ensureGraph(bbox = state.data.bbox) {
   }
 }
 
+// ---------- Pendel-Ziele ----------
+const commuteCache = new Map(); // key -> {field} | {error}
+
+/** Nächster Werktag zur Uhrzeit hh:mm (lokal) – für ÖPNV-Ankunft. */
+function nextWorkday(hhmm = '08:30') {
+  const [h, mi] = hhmm.split(':').map(Number);
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  d.setHours(h, mi, 0, 0);
+  return d;
+}
+
+function commuteKey(m) {
+  const t = m.target;
+  const s = state.settings[m.id];
+  const base = `${t.id}|${t.mode}|${t.lat.toFixed(5)},${t.lon.toFixed(5)}`;
+  return t.mode === 'transit' ? `${base}|${t.arrive || '08:30'}|${Math.min(90, s.distance * 2)}` : `${base}|${bboxKey(state.bbox)}`;
+}
+
+async function ensureCommutes() {
+  if (!state.bbox) return;
+  for (const m of enabledModules().filter((x) => x.kind === 'target')) {
+    const key = commuteKey(m);
+    if (commuteCache.get(key)?.field) continue;
+    const t = m.target;
+    setStatus(`${COMMUTE_MODES[t.mode].icon} Reisezeiten zu „${t.name}“ …`);
+    try {
+      const field =
+        t.mode === 'transit'
+          ? await transitField(t, { time: nextWorkday(t.arrive), maxMinutes: state.settings[m.id].distance * 2 })
+          : await osrmField(t.mode, t, state.bbox);
+      commuteCache.set(key, { field });
+    } catch (e) {
+      commuteCache.set(key, { error: e.message });
+    }
+  }
+}
+
+function drawTargets() {
+  targetLayer.clearLayers();
+  for (const t of state.targets) {
+    L.marker([t.lat, t.lon], {
+      icon: L.divIcon({ className: 'target-icon', html: `<span>${COMMUTE_MODES[t.mode]?.icon || '📍'}</span>`, iconSize: [30, 30], iconAnchor: [15, 15] }),
+      zIndexOffset: 2000,
+    })
+      .bindTooltip(`${esc(t.name)} · ${COMMUTE_MODES[t.mode]?.label} ≤ ${state.settings[`target-${t.id}`]?.distance ?? t.minutes} min`)
+      .addTo(targetLayer);
+  }
+}
+
+$('#target-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const name = String(f.get('name')).trim();
+  const addr = String(f.get('addr')).trim();
+  const btn = e.target.querySelector('button');
+  btn.disabled = true;
+  try {
+    const m = addr.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+    const hit = m ? { lat: +m[1], lon: +m[2] } : await geocodeCached(addr);
+    if (!hit) return setStatus(`Adresse nicht gefunden: ${addr}`, true);
+    const t = {
+      id: Date.now().toString(36),
+      name,
+      lat: hit.lat,
+      lon: hit.lon,
+      mode: String(f.get('mode')),
+      minutes: Math.max(1, +f.get('minutes') || 20),
+      arrive: String(f.get('arrive') || '08:30'),
+    };
+    state.targets.push(t);
+    store.set('targets', state.targets);
+    loadModules();
+    saveSettings();
+    refreshPanel();
+    drawTargets();
+    e.target.reset();
+    setStatus(`Ziel „${name}“ hinzugefügt – ${COMMUTE_MODES[t.mode].label}, max. ${t.minutes} min.`);
+    onSettingsChanged();
+  } catch (err) {
+    setStatus(`Ziel konnte nicht angelegt werden: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 async function analyze(bbox) {
   if (!bbox) {
     const b = map.getBounds();
@@ -355,7 +458,7 @@ async function analyze(bbox) {
   }
   state.bbox = bbox;
   // Daten mit Rand laden, sonst wirken Lagen am Rand besser als sie sind (POIs knapp außerhalb fehlen).
-  const pad = Math.min(1000, Math.max(...enabledModules().map((m) => searchRadius(state.settings[m.id]))));
+  const pad = Math.min(1000, Math.max(200, ...dataModules().map((m) => searchRadius(state.settings[m.id]))));
   state.data.setArea(padBbox(bbox, pad));
   $('#analyze-btn').disabled = true;
   try {
@@ -415,8 +518,21 @@ function rebuild() {
 
   for (const m of state.modules) {
     const s = state.settings[m.id];
-    const d = state.data.get(m.id);
     clearMarkers(m.id);
+    if (m.kind === 'target') {
+      if (!s?.enabled) continue;
+      const c = commuteCache.get(commuteKey(m));
+      if (!c) continue;
+      if (c.error) {
+        state.counts[m.id] = { error: c.error };
+        errors.push(m);
+        continue;
+      }
+      state.counts[m.id] = c.field.stops != null ? { label: `${c.field.stops} Halte`, title: 'Haltestellen, von denen man rechtzeitig ankommt' } : { label: '✓', title: 'Reisezeiten geladen' };
+      state.layers.set(m.id, { module: m, settings: s, index: new CommuteIndex(c.field, m.target), elements: [] });
+      continue;
+    }
+    const d = state.data.get(m.id);
     if (!s?.enabled || !d) continue;
     if (d.error) {
       state.counts[m.id] = { error: d.error };
@@ -686,7 +802,7 @@ function renderCandidates() {
   for (const { cand: c, idx, ev } of rows) {
     if (c.lat == null) continue;
     L.marker([c.lat, c.lon], { icon: candidateIcon(idx, ev ? ev.score : null), zIndexOffset: 1000 })
-      .bindTooltip(`${idx + 1}. ${c.label}${ev ? ` · ${ev.score == null ? '✘' : Math.round(ev.score * 100) + ' %'}` : ''}`)
+      .bindTooltip(`${idx + 1}. ${esc(c.label)}${ev ? ` · ${ev.score == null ? '✘' : Math.round(ev.score * 100) + ' %'}` : ''}`)
       .on('click', () => (state.layers.size ? showReport(L.latLng(c.lat, c.lon)) : null))
       .addTo(candLayer);
   }
@@ -749,6 +865,7 @@ function currentEncoded() {
     modules: state.modules,
     settings: state.settings,
     customDefs: state.customDefs,
+    targets: state.targets,
     distMode: state.distMode,
     time: toLocalInput(state.time),
     candidates: state.candidates,
@@ -776,7 +893,7 @@ $('#copy-query').addEventListener('click', () => copy(state.data.lastQuery || ''
 $('#config-export').addEventListener('click', () =>
   download(
     'search-a-hood-config.json',
-    JSON.stringify({ version: 1, settings: state.settings, customDefs: state.customDefs, distMode: state.distMode, candidates: state.candidates }, null, 2),
+    JSON.stringify({ version: 1, settings: state.settings, customDefs: state.customDefs, targets: state.targets, distMode: state.distMode, candidates: state.candidates }, null, 2),
     'application/json',
   ),
 );
@@ -787,6 +904,9 @@ $('#config-import').addEventListener('change', async (e) => {
     const cfg = JSON.parse(await file.text());
     state.customDefs = cfg.customDefs || [];
     store.set('custom', state.customDefs);
+    state.targets = cfg.targets || [];
+    store.set('targets', state.targets);
+    drawTargets();
     state.settings = {};
     store.set('settings', cfg.settings || {});
     loadModules();
@@ -985,6 +1105,7 @@ document.addEventListener('keydown', (e) => {
 // =====================================================================
 refreshPanel();
 renderCandidates();
+drawTargets();
 setStatus(fromLink ? 'Permalink geladen – „analysieren“ drücken (A).' : 'Viertel wählen, Preset oder Module einstellen, dann „analysieren“ (A). ⌘K für alles andere.');
 const showEngine = () => ($('#hours-engine').textContent = hoursEngine());
 showEngine();

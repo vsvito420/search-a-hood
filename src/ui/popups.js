@@ -5,9 +5,18 @@ import { labelOf } from '../modules/define.js';
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
+/** Nur http(s)-Links durchlassen – OSM-Tags, Permalinks und Config-Importe sind Fremddaten. */
+export const safeUrl = (u) => (typeof u === 'string' && /^https?:\/\//i.test(u.trim()) ? u.trim() : null);
+
 export function formatDist(m) {
   if (!Number.isFinite(m)) return '–';
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
+}
+
+/** Wert eines Kriteriums formatieren – Meter oder (bei Zielen) Minuten. */
+export function fmtValue(module, v) {
+  if (module?.unit === 'min') return Number.isFinite(v) ? `${Math.round(v)} min` : '–';
+  return formatDist(v);
 }
 
 /** Gehminuten bei ~4,8 km/h. */
@@ -24,7 +33,8 @@ export function poiPopup(module, el, time) {
   if (t.opening_hours) rows.push(`<tr><td>Öffnungszeiten</td><td>${esc(t.opening_hours)}<br>${openLabel(t.opening_hours, time)}</td></tr>`);
   const addr = [t['addr:street'] && `${t['addr:street']} ${t['addr:housenumber'] || ''}`, t['addr:city']].filter(Boolean).join(', ');
   if (addr) rows.push(`<tr><td>Adresse</td><td>${esc(addr)}</td></tr>`);
-  if (t.website) rows.push(`<tr><td>Web</td><td><a href="${esc(t.website)}" target="_blank" rel="noopener noreferrer">${esc(t.website)}</a></td></tr>`);
+  const web = safeUrl(t.website || t['contact:website']);
+  if (web) rows.push(`<tr><td>Web</td><td><a href="${esc(web)}" target="_blank" rel="noopener noreferrer">${esc(web)}</a></td></tr>`);
   const [type, id] = el.type ? [el.type, el.id] : String(el.id).split('/');
   return `<div class="report">
     <strong>${esc(labelOf(t, module.name))}</strong><br><small>${esc(module.name)}</small>
@@ -37,16 +47,19 @@ export function reportPopup({ parts, score }, latlng, { walk = false } = {}) {
   const rows = parts
     .map((p) => {
       const { module, settings, hit, dist, satisfied } = p;
+      const isMin = module.unit === 'min';
       const icon = satisfied ? '<span class="ok">✔</span>' : settings.required ? '<span class="bad">✘</span>' : '<span class="bad">·</span>';
-      const what = hit ? esc(labelOf(hit.item.tags || {}, '')) : '';
+      const what = hit && !isMin ? esc(labelOf(hit.item.tags || {}, '')) : '';
       const d = hit
-        ? `${formatDist(dist)} (${walkMin(dist)} min)`
+        ? isMin
+          ? fmtValue(module, dist)
+          : `${formatDist(dist)} (${walkMin(dist)} min)`
         : settings.mode === 'far'
-          ? `> ${formatDist(settings.distance)}`
-          : `> ${formatDist(settings.distance * 2)}`;
+          ? `> ${fmtValue(module, settings.distance)}`
+          : `> ${fmtValue(module, settings.distance * 2)}`;
       const k = settings.mode === 'near' ? settings.minCount || 1 : 1;
-      const goal = `${k > 1 ? `${k}× ` : ''}${settings.mode === 'far' ? '≥' : '≤'} ${formatDist(settings.distance)}`;
-      const how = walk && module.geometry !== 'line' && settings.mode !== 'far' ? '🚶' : '';
+      const goal = `${k > 1 ? `${k}× ` : ''}${settings.mode === 'far' ? '≥' : '≤'} ${fmtValue(module, settings.distance)}`;
+      const how = walk && !isMin && module.geometry !== 'line' && settings.mode !== 'far' ? '🚶' : '';
       return `<tr><td>${icon}</td><td>${esc(module.name)}${what ? `<br><small>${what}</small>` : ''}</td><td>${how}${d}<br><small>Ziel ${goal}</small></td></tr>`;
     })
     .join('');

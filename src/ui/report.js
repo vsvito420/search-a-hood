@@ -1,4 +1,4 @@
-import { esc, formatDist, walkMin, lostPoints } from './popups.js';
+import { esc, formatDist, fmtValue, walkMin, lostPoints, safeUrl } from './popups.js';
 import { SpatialIndex } from '../core/spatial-index.js';
 import { elementsToPoints } from '../core/overpass.js';
 import { isOpenAt } from '../core/hours.js';
@@ -27,18 +27,19 @@ export function buildReportHtml(place, ev, layers, { time, distMode }) {
       const open = p.module.supportsHours && p.hit ? isOpenAt(tags.opening_hours, time) : undefined;
       const openTxt = open === true ? '<span class="ok">offen</span>' : open === false ? '<span class="bad">zu</span>' : open === null ? '<span class="muted">?</span>' : '';
       let counts = '';
-      if (p.module.geometry !== 'line' && layer) {
+      const isMin = p.module.unit === 'min';
+      if (p.module.geometry !== 'line' && layer && !isMin) {
         const idx = new SpatialIndex(elementsToPoints(layer.elements, 'point'));
         counts = RINGS.map((m) => idx.within(place.lat, place.lon, m * 80).length).join(' / ');
       }
       const k = p.settings.mode === 'near' ? p.settings.minCount || 1 : 1;
-      const goal = `${k > 1 ? `${k}× ` : ''}${p.settings.mode === 'far' ? '≥' : '≤'} ${formatDist(p.settings.distance)}`;
+      const goal = `${k > 1 ? `${k}× ` : ''}${p.settings.mode === 'far' ? '≥' : '≤'} ${fmtValue(p.module, p.settings.distance)}`;
       return `<tr>
         <td>${p.satisfied ? '<span class="ok">✔</span>' : p.required ? '<span class="bad">✘</span>' : '<span class="warn">·</span>'}</td>
         <td><b>${esc(p.module.name)}</b><br><small>${esc(p.module.category)} · Gewicht ${p.weight}${p.required ? ' · Pflicht' : ''}</small></td>
-        <td>${p.hit ? esc(labelOf(tags, '–')) : p.settings.mode === 'far' ? '<span class="ok">keins in Reichweite</span>' : '<span class="bad">keins gefunden</span>'}
+        <td>${isMin ? `<small>${esc(p.module.description)}</small>` : p.hit ? esc(labelOf(tags, '–')) : p.settings.mode === 'far' ? '<span class="ok">keins in Reichweite</span>' : '<span class="bad">keins gefunden</span>'}
             ${tags.opening_hours ? `<br><small>${esc(tags.opening_hours)}</small>` : ''}</td>
-        <td class="num">${p.hit ? `${formatDist(p.dist)}<br><small>${walkMin(p.dist)} min</small>` : '–'}</td>
+        <td class="num">${p.hit ? (isMin ? fmtValue(p.module, p.dist) : `${formatDist(p.dist)}<br><small>${walkMin(p.dist)} min</small>`) : '–'}</td>
         <td class="num">${goal}</td>
         <td>${openTxt}</td>
         <td class="num">${counts}</td>
@@ -75,7 +76,7 @@ export function buildReportHtml(place, ev, layers, { time, distMode }) {
 <div class="noprint"><button onclick="print()">🖨 Drucken / als PDF speichern</button></div>
 <h1>📍 ${esc(place.label)}</h1>
 <p class="meta">${place.lat.toFixed(5)}, ${place.lon.toFixed(5)} · Stand ${esc(when)} · Entfernungen: ${distMode === 'walk' ? 'echte Fußwege' : 'Luftlinie'}${
-    place.url ? ` · <a href="${esc(place.url)}">Inserat</a>` : ''
+    safeUrl(place.url) ? ` · <a href="${esc(safeUrl(place.url))}" rel="noopener noreferrer">Inserat</a>` : ''
   }</p>
 <div class="top">
   <div class="score">${scoreTxt}<small>Lage-Score</small></div>

@@ -6,9 +6,16 @@
   <title>search-a-hood</title>
   <meta name="description" content="Modulares OSINT-Tool: Finde Wohnlagen, die zu dir passen – auf Basis von OpenStreetMap." />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏘️</text></svg>" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Leaflet mit Integritätsprüfung (SRI); fällt jsdelivr aus, springt unpkg ein -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""
+        onerror="this.onerror=null;this.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'" />
   <link rel="stylesheet" href="styles.css" />
-  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    window.L || document.write('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""><\/script>');
+  </script>
 </head>
 <body>
   <aside id="sidebar">
@@ -62,6 +69,28 @@
           <button type="button" data-mode="walk" aria-pressed="false">🚶 echte Fußwege</button>
         </div>
         <p class="hint">„Fußwege“ lädt das Wegenetz und rechnet mit Dijkstra – Flüsse, Bahntrassen und Autobahnen ohne Übergang zählen dann wirklich als Umweg.</p>
+      </section>
+
+      <section>
+        <h2>📍 Meine Ziele · Pendeln</h2>
+        <form id="target-form" class="stack">
+          <div class="row">
+            <input name="name" placeholder="Name, z. B. Arbeit" required class="grow" />
+            <select name="mode" aria-label="Verkehrsmittel">
+              <option value="bike">🚲 Rad</option>
+              <option value="transit">🚆 ÖPNV</option>
+              <option value="foot">🚶 Fuß</option>
+              <option value="car">🚗 Auto</option>
+            </select>
+          </div>
+          <input name="addr" placeholder="Adresse oder lat,lon" required />
+          <div class="row">
+            <label>max. <input name="minutes" type="number" min="1" max="120" value="25" class="tiny" /> min</label>
+            <label title="Ankunftszeit (nur ÖPNV), nächster Werktag">Ankunft <input name="arrive" type="time" value="08:30" /></label>
+            <button type="submit">Hinzufügen</button>
+          </div>
+        </form>
+        <p class="hint">Echte Reisezeit von jeder Lage zum Ziel. Rad, Fuß und Auto rechnet FOSSGIS-OSRM, den ÖPNV Transitous mit Ankunft am nächsten Werktag. Ziele erscheinen als Module unter „Meine Ziele“.</p>
       </section>
 
       <section>

@@ -16,7 +16,7 @@ const b64url = {
 const KEYS = ['enabled', 'mode', 'distance', 'weight', 'required', 'openAtTime', 'showMarkers', 'minCount'];
 
 /** Nur Abweichungen von den Modul-Defaults speichern → kurze Links. */
-export function encodeState({ view, modules, settings, customDefs, distMode, time, candidates }) {
+export function encodeState({ view, modules, settings, customDefs, targets = [], distMode, time, candidates }) {
   const m = {};
   for (const mod of modules) {
     const s = settings[mod.id];
@@ -29,6 +29,7 @@ export function encodeState({ view, modules, settings, customDefs, distMode, tim
     c: [+view.lat.toFixed(5), +view.lng.toFixed(5), view.zoom],
     m,
     ...(customDefs.length && { x: customDefs }),
+    ...(targets.length && { g: targets.map((t) => [t.id, t.name, +t.lat.toFixed(5), +t.lon.toFixed(5), t.mode, t.minutes, t.arrive]) }),
     ...(distMode !== 'air' && { d: distMode }),
     ...(time && { t: time }),
     ...(candidates?.length && {
@@ -53,6 +54,7 @@ export function decodeState(hash, modules) {
     view: { center: [p.c[0], p.c[1]], zoom: p.c[2] },
     settings,
     customDefs: p.x || [],
+    targets: (p.g || []).map(([id, name, lat, lon, mode, minutes, arrive]) => ({ id, name, lat, lon, mode, minutes, arrive })),
     distMode: p.d || 'air',
     time: p.t || null,
     candidates: (p.k || []).map(([label, lat, lon, rent, size, url]) => ({ label, lat, lon, rent, size, url })),
