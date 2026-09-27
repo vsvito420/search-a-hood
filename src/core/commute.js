@@ -82,20 +82,37 @@ export async function osrmField(mode, target, bbox, { n = 9, fetchImpl = globalT
 }
 
 /**
- * ÖPNV: Haltestellen, von denen man bis `time` am Ziel ist (arriveBy), + Fußweg dorthin.
- * @returns {{minutesAt(lat, lon): number, stops: number}}
+ * Transitous one-to-all: alle Haltestellen, die ab (bzw. mit arriveBy: bis) `time` in ≤ maxMinutes erreichbar sind.
+ * @returns {Promise<{lat:number, lon:number, name:string, minutes:number}[]>}
  */
-export async function transitField(target, { time, maxMinutes = 45, fetchImpl = globalThis.fetch, signal } = {}) {
+export async function transitReach(point, { time, maxMinutes = 30, arriveBy = false, fetchImpl = globalThis.fetch, signal } = {}) {
   const params = new URLSearchParams({
-    one: `${target.lat.toFixed(6)},${target.lon.toFixed(6)}`,
+    one: `${point.lat.toFixed(6)},${point.lon.toFixed(6)}`,
     time: time.toISOString(),
-    arriveBy: 'true',
+    arriveBy: String(arriveBy),
     maxTravelTime: String(Math.min(90, Math.max(5, Math.round(maxMinutes)))),
   });
   const res = await fetchImpl(`${MOTIS}?${params}`, { signal });
   if (!res.ok) throw new Error(`Transitous HTTP ${res.status}`);
   const json = await res.json();
-  return stopsField(target, json.all || [], maxMinutes);
+  // Pro Haltestelle (Name + Position) nur die schnellste Variante
+  const best = new Map();
+  for (const r of json.all || []) {
+    if (!r.place || !Number.isFinite(r.duration)) continue;
+    const key = `${r.place.name}|${r.place.lat.toFixed(4)},${r.place.lon.toFixed(4)}`;
+    const cur = best.get(key);
+    if (!cur || r.duration < cur.minutes) best.set(key, { lat: r.place.lat, lon: r.place.lon, name: r.place.name, minutes: r.duration });
+  }
+  return [...best.values()];
+}
+
+/**
+ * ÖPNV: Haltestellen, von denen man bis `time` am Ziel ist (arriveBy), + Fußweg dorthin.
+ * @returns {{minutesAt(lat, lon): number, stops: number}}
+ */
+export async function transitField(target, { time, maxMinutes = 45, fetchImpl, signal } = {}) {
+  const stops = await transitReach(target, { time, maxMinutes, arriveBy: true, fetchImpl, signal });
+  return stopsField(target, stops.map((s) => ({ place: s, duration: s.minutes })), maxMinutes);
 }
 
 /** Aus erreichbaren Haltestellen ein Zeitfeld bauen (auch für Tests ohne Netz). */

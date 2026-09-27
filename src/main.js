@@ -19,7 +19,7 @@ import { OverlayManager } from './ui/overlays.js';
 import { renderCandidateTable, sortValue } from './ui/candidates.js';
 import { createPalette } from './ui/palette.js';
 import { buildReportHtml, openReport } from './ui/report.js';
-import { osrmField, transitField, CommuteIndex, COMMUTE_MODES } from './core/commute.js';
+import { osrmField, transitField, transitReach, CommuteIndex, COMMUTE_MODES } from './core/commute.js';
 
 if (!window.L) {
   document.getElementById('status').textContent = 'Kartenbibliothek (Leaflet) konnte nicht geladen werden – Netzwerk/Adblocker prüfen und neu laden.';
@@ -700,6 +700,7 @@ async function showReport(latlng) {
     ${outside ? '<p class="bad"><small>Außerhalb des analysierten Gebiets – Werte unzuverlässig.</small></p>' : ''}
     <div class="popup-actions">
       <button type="button" data-act="iso">⏱ Isochrone</button>
+      <button type="button" data-act="transit-iso" title="Mit Bus & Bahn ab hier, Abfahrt zum gewählten Zeitpunkt">🚆 ÖPNV 30′</button>
       <button type="button" data-act="cand">★ Als Kandidat</button>
       <button type="button" data-act="report">📄 Steckbrief</button>
       <a href="https://www.openstreetmap.org/?mlat=${latlng.lat}&mlon=${latlng.lng}#map=18/${latlng.lat}/${latlng.lng}" target="_blank" rel="noopener">OSM</a>
@@ -708,6 +709,7 @@ async function showReport(latlng) {
   const popup = L.popup({ maxWidth: 380 }).setLatLng(latlng).setContent(html).openOn(map);
   const el = popup.getElement();
   el.querySelector('[data-act="iso"]').addEventListener('click', () => drawIsochrone(latlng));
+  el.querySelector('[data-act="transit-iso"]').addEventListener('click', () => drawTransitIsochrone(latlng));
   el.querySelector('[data-act="cand"]').addEventListener('click', () => {
     map.closePopup();
     addCandidateAt(latlng);
@@ -767,6 +769,42 @@ async function drawIsochrone(latlng = state.lastClick) {
     .addTo(isoLayer);
   isoLayer.addTo(map);
   setStatus(`Isochrone: ${iso.reached.toLocaleString('de')} Kreuzungen in 15 min erreichbar (grün ≤ 5, gelb ≤ 10, rot ≤ 15 min, ${WALK_SPEED_M_PER_MIN} m/min).`);
+}
+
+/**
+ * ÖPNV-Isochrone: alle Haltestellen, die ab dem Punkt in ≤ 30 min erreichbar sind (Abfahrt = gewählter
+ * Zeitpunkt), plus der Fußweg-Radius, der von der Restzeit übrig bleibt.
+ */
+async function drawTransitIsochrone(latlng, maxMinutes = 30) {
+  map.closePopup();
+  const when = state.time < new Date() ? new Date() : state.time;
+  setStatus(`🚆 Berechne ÖPNV-Erreichbarkeit ab Abfahrt ${when.toLocaleString('de-DE', { weekday: 'short', hour: '2-digit', minute: '2-digit' })} …`);
+  let stops;
+  try {
+    stops = await transitReach({ lat: latlng.lat, lon: latlng.lng }, { time: when, maxMinutes });
+  } catch (e) {
+    return setStatus(`ÖPNV-Isochrone fehlgeschlagen: ${e.message}`, true);
+  }
+  isoLayer?.remove();
+  isoLayer = L.layerGroup();
+  const band = (m) => (m <= 10 ? '#1a9850' : m <= 20 ? '#fdd835' : '#d7301f');
+  // weiter entfernte zuerst, damit die schnellen oben liegen
+  for (const st of stops.sort((a, b) => b.minutes - a.minutes)) {
+    const rest = Math.max(0, maxMinutes - st.minutes);
+    L.circle([st.lat, st.lon], { radius: Math.min(500, rest * WALK_SPEED_M_PER_MIN * 0.75), stroke: false, fillColor: band(st.minutes), fillOpacity: 0.18, interactive: false }).addTo(isoLayer);
+  }
+  for (const st of stops) {
+    L.circleMarker([st.lat, st.lon], { radius: 3, weight: 0, fillColor: band(st.minutes), fillOpacity: 0.9 })
+      .bindTooltip(`${esc(st.name)} · ${st.minutes} min`)
+      .addTo(isoLayer);
+  }
+  L.circleMarker(latlng, { radius: 7, color: '#000', weight: 2, fillColor: '#fff', fillOpacity: 1 })
+    .bindTooltip('Start · Klick = entfernen')
+    .on('click', () => isoLayer.remove())
+    .addTo(isoLayer);
+  isoLayer.addTo(map);
+  if (stops.length) map.fitBounds(L.latLngBounds(stops.map((st) => [st.lat, st.lon])).pad(0.05));
+  setStatus(`🚆 ${stops.length.toLocaleString('de')} Haltestellen in ≤ ${maxMinutes} min erreichbar (grün ≤ 10, gelb ≤ 20, rot ≤ 30 min, inkl. Umstieg & Wartezeit). Quelle: Transitous.`);
 }
 
 // =====================================================================
@@ -1076,6 +1114,7 @@ const palette = createPalette($('#palette'), () => [
   { label: '🚶 Entfernung: echte Fußwege', hint: 'W', run: () => setDistMode('walk') },
   { label: '📏 Entfernung: Luftlinie', hint: 'W', run: () => setDistMode('air') },
   { label: '⏱ Isochrone am letzten Klickpunkt', hint: 'I', run: () => drawIsochrone() },
+  { label: '🚆 ÖPNV-Isochrone (30 min) am letzten Klickpunkt', run: () => (state.lastClick ? drawTransitIsochrone(state.lastClick) : setStatus('Erst auf die Karte klicken.', true)) },
   { label: '🎚 Relative Farbskala an/aus', hint: 'R', run: () => relBox.click() },
   { label: '📅 Wochen-Zeitraffer', hint: 'T', run: () => toggleTimeline(true) },
   ...(state.focusModule ? [{ label: '◉ Einzelansicht beenden', run: () => ((state.focusModule = null), refreshPanel(), scheduleRebuild()) }] : []),
@@ -1131,6 +1170,31 @@ setStatus(fromLink ? 'Permalink geladen – „analysieren“ drücken (A).' : '
 const showEngine = () => ($('#hours-engine').textContent = hoursEngine());
 showEngine();
 loadHoursLib().then((ok) => (showEngine(), ok && scheduleRebuild()));
+
+// ---------- Deep-Links: ?addr=…&at=lat,lon&z=16&preset=informatiker&walk=1&time=2026-10-02T23:00&run=1
+async function applyQueryParams() {
+  const q = new URLSearchParams(location.search);
+  if (![...q.keys()].length) return;
+  const preset = PRESETS.find((p) => p.id === q.get('preset'));
+  if (preset) applyPreset(preset);
+  if (q.get('walk') === '1') setDistMode('walk');
+  if (q.get('time') && !Number.isNaN(new Date(q.get('time')).getTime())) setTime(new Date(q.get('time')));
+  const zoom = Math.min(19, Math.max(12, +q.get('z') || 16));
+  const at = q.get('at')?.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  let point = at ? L.latLng(+at[1], +at[2]) : null;
+  if (!point && q.get('addr')) {
+    setStatus(`Suche „${q.get('addr')}“ …`);
+    const hit = await geocodeCached(q.get('addr')).catch(() => null);
+    if (hit) point = L.latLng(hit.lat, hit.lon);
+    else setStatus(`Adresse nicht gefunden: ${q.get('addr')}`, true);
+  }
+  if (point) map.setView(point, zoom);
+  if (q.get('run') === '1') {
+    await analyze();
+    if (point) showReport(point);
+  }
+}
+applyQueryParams();
 
 // Für Debugging / eigene Skripte in der DevTools-Konsole
 window.searchAHood = { state, map, modules: state.modules, evaluate, analyze, overlays, formatDist };

@@ -2,6 +2,17 @@ import { esc, fmtValue, safeUrl } from './popups.js';
 import { pricePerSqm } from '../core/candidates.js';
 import { scoreColor } from '../core/scoring.js';
 
+// Sequenzielle Blau-Rampe (hell → dunkel) für die Score-Matrix; im Dark Mode eigene Stufen,
+// bei denen niedrige Werte zur (dunklen) Fläche hin zurücktreten.
+const RAMP = ['#cde2fb', '#b7d3f6', '#9ec5f4', '#86b6ef', '#6da7ec', '#5598e7', '#3987e5', '#2a78d6', '#256abf', '#1c5cab'];
+const RAMP_DARK = ['#0d366b', '#104281', '#184f95', '#1c5cab', '#256abf', '#2a78d6', '#3987e5', '#5598e7', '#6da7ec', '#86b6ef'];
+const step = (ramp, s) => ramp[Math.max(0, Math.min(ramp.length - 1, Math.round(s * (ramp.length - 1))))];
+/** Zellstil: Hintergrund nach Score, Schrift hell/dunkel je nach Stufe (Kontrast). */
+function cellStyle(score) {
+  const i = Math.round(Math.max(0, Math.min(1, score)) * (RAMP.length - 1));
+  return `--bg-l:${step(RAMP, score)};--fg-l:${i >= 6 ? '#fff' : '#1d232b'};--bg-d:${step(RAMP_DARK, score)};--fg-d:${i >= 7 ? '#0b1a2e' : '#e6eaef'}`;
+}
+
 const pct = (s) => (s == null ? '✘' : `${Math.round(s * 100)} %`);
 const chip = (s) => {
   if (s === undefined) return '<span class="muted">–</span>';
@@ -42,8 +53,10 @@ export function renderCandidateTable(root, rows, { sortKey, sortDir, onSort, onF
       ...activeModules.map((m) => {
         const p = byId.get(m.id);
         if (!p) return '<td class="muted">–</td>';
-        const cls = p.satisfied ? 'ok' : p.required ? 'bad' : 'warn';
-        return `<td class="${cls}" title="${esc(p.hit?.item?.tags?.name || '')}">${p.hit ? fmtValue(m, p.dist) : p.settings.mode === 'far' ? '✔ weit' : '✘'}</td>`;
+        const mark = p.satisfied ? '✓' : p.required ? '✗' : '·';
+        const val = p.hit ? fmtValue(m, p.dist) : p.settings.mode === 'far' ? 'weit' : '–';
+        const tip = `${m.name}: ${val} · ${Math.round(p.score * 100)} % ${p.satisfied ? '(Ziel erfüllt)' : p.required ? '(Pflicht verletzt)' : '(Ziel verfehlt)'}${p.hit?.item?.tags?.name && m.unit !== 'min' ? ` · ${p.hit.item.tags.name}` : ''}`;
+        return `<td class="cell" style="${cellStyle(p.score)}" title="${esc(tip)}">${mark} ${val}</td>`;
       }),
       `<td><button class="del" type="button" data-del="${r.idx}" title="entfernen">✕</button></td>`,
     ].join('');
@@ -51,7 +64,8 @@ export function renderCandidateTable(root, rows, { sortKey, sortDir, onSort, onF
   root.innerHTML = `<table class="cmp">
     <thead><tr>${head.map(([k, l]) => `<th data-sort="${esc(k)}" title="${esc(l)}">${esc(l)}${arrow(k)}</th>`).join('')}<th></th></tr></thead>
     <tbody>${rows.map((r) => `<tr data-idx="${r.idx}">${cells(r)}</tr>`).join('')}</tbody>
-  </table>`;
+  </table>
+  ${activeModules.length ? '<div class="matrix-legend"><span>Kriterium 0 %</span><i></i><span>100 %</span><span>· ✓ erfüllt · ✗ Pflicht verletzt · Spalte anklicken = sortieren</span></div>' : ''}`;
   root.querySelectorAll('th[data-sort]').forEach((th) => th.addEventListener('click', () => onSort(th.dataset.sort)));
   root.querySelectorAll('tr[data-idx]').forEach((tr) =>
     tr.addEventListener('click', (e) => {

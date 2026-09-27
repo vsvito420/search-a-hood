@@ -16,18 +16,17 @@ await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
 const page = await ctx.newPage();
 page.on('pageerror', (e) => (errors.push(e.message), console.error(`\n  ⚠ Seitenfehler: ${e.message}`)));
 
-if (process.env.OVERPASS_VIA_CURL) {
-  await page.route(/\/api\/interpreter/, async (route) => {
-    const data = new URLSearchParams(route.request().postData() || '').get('data');
-    if (process.env.DEBUG) console.log('  overpass ←', data.slice(0, 120));
-    try {
-      const out = execFileSync('curl', ['-s', '-m', '150', '--data-urlencode', 'data@-', MIRROR], { input: data, maxBuffer: 512 << 20 });
-      await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: out });
-    } catch (e) {
-      await route.fulfill({ status: 502, headers: { 'access-control-allow-origin': '*' }, body: String(e) });
-    }
-  });
+async function overpassViaCurl(route) {
+  const data = new URLSearchParams(route.request().postData() || '').get('data');
+  if (process.env.DEBUG) console.log('  overpass ←', data.slice(0, 120));
+  try {
+    const out = execFileSync('curl', ['-s', '-m', '150', '--data-urlencode', 'data@-', MIRROR], { input: data, maxBuffer: 512 << 20 });
+    await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: out });
+  } catch (e) {
+    await route.fulfill({ status: 502, headers: { 'access-control-allow-origin': '*' }, body: String(e) });
+  }
 }
+if (process.env.OVERPASS_VIA_CURL) await page.route(/\/api\/interpreter/, overpassViaCurl);
 
 if (process.env.OVERPASS_VIA_CURL) {
   // Routing (FOSSGIS-OSRM) ebenfalls per curl – GET-Anfragen 1:1 durchreichen
@@ -185,6 +184,17 @@ await step('Pendel-Ziele (Rad + ÖPNV)', async () => {
   return `${counts} · ${rows.join(' | ')}`;
 });
 
+await step('ÖPNV-Isochrone', async () => {
+  await page.evaluate(() => {
+    const { map } = window.searchAHood;
+    map.fire('click', { latlng: L.latLng(52.4986, 13.418), originalEvent: new MouseEvent('click') });
+  });
+  await click('[data-act="transit-iso"]');
+  await waitStatus(/Haltestellen in|fehlgeschlagen/, 120_000);
+  await snap('8-oepnv-isochrone');
+  return status();
+});
+
 await step('Befehlspalette', async () => {
   await page.keyboard.press('Control+K');
   await page.fill('#palette-input', 'bubatz');
@@ -197,6 +207,20 @@ await step('Permalink', async () => {
   await click('#permalink-btn');
   const link = await page.evaluate(() => navigator.clipboard.readText());
   return `${link.length} Zeichen`;
+});
+
+await step('Deep-Link ?at=…&preset=nachteule&run=1 (frischer Browser)', async () => {
+  // eigener Kontext = leerer localStorage, wie bei jemandem, der den Link geschickt bekommt
+  const fresh = await browser.newContext({ viewport: { width: 1280, height: 800 }, ignoreHTTPSErrors: true });
+  const p2 = await fresh.newPage();
+  p2.on('pageerror', (e) => errors.push(e.message));
+  if (process.env.OVERPASS_VIA_CURL) await p2.route(/\/api\/interpreter/, (route) => overpassViaCurl(route));
+  await p2.goto(`${BASE}/?at=52.4986,13.418&z=16&preset=nachteule&run=1`, { waitUntil: 'domcontentloaded' });
+  await p2.waitForFunction(() => /Zellen|fehlgeschlagen/.test(document.querySelector('#status').textContent), null, { timeout: 300_000 });
+  await p2.waitForSelector('.leaflet-popup-content .score');
+  const r = `${(await p2.textContent('.leaflet-popup-content .score')).trim()} · ${(await p2.textContent('#status')).split('·')[0].trim()}`;
+  await fresh.close();
+  return r;
 });
 
 await browser.close();

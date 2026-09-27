@@ -61,3 +61,27 @@ test('CommuteIndex fügt sich in evaluatePoint ein (Einheit Minuten)', () => {
   assert.equal(r.parts[0].score, 0.75);
   assert.equal(r.parts[0].hit.item.tags.name, 'Arbeit');
 });
+
+test('transitReach: Parameter, Deduplizierung pro Haltestelle', async () => {
+  const { transitReach } = await import('../src/core/commute.js');
+  let url;
+  const fetchImpl = async (u) => {
+    url = u;
+    return {
+      ok: true,
+      json: async () => ({
+        all: [
+          { place: { name: 'Kotti', lat: 52.4991, lon: 13.4181 }, duration: 12 },
+          { place: { name: 'Kotti', lat: 52.49912, lon: 13.41811 }, duration: 9 },
+          { place: { name: 'Hbf', lat: 52.525, lon: 13.369 }, duration: 20 },
+          { place: null, duration: 3 },
+        ],
+      }),
+    };
+  };
+  const r = await transitReach({ lat: 52.5, lon: 13.4 }, { time: new Date('2026-10-01T06:30:00Z'), maxMinutes: 30, fetchImpl });
+  assert.match(url, /one=52\.500000%2C13\.400000/);
+  assert.match(url, /arriveBy=false/);
+  assert.match(url, /maxTravelTime=30/);
+  assert.deepEqual(r.map((x) => [x.name, x.minutes]), [['Kotti', 9], ['Hbf', 20]]);
+});
