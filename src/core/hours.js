@@ -1,5 +1,6 @@
 // Öffnungszeiten-Auswertung über die opening_hours.js-Bibliothek (lazy geladen).
-// Ohne Bibliothek werden nur die eindeutigen Fälle "24/7" / "off" erkannt.
+// Ohne Bibliothek übernimmt der eingebaute Auswerter oh-lite.js die gängigen Muster.
+import { isOpenLite } from './oh-lite.js';
 
 const LIB_URL = 'https://cdn.jsdelivr.net/npm/opening_hours@3.15.0/+esm';
 let OpeningHours = null;
@@ -17,6 +18,9 @@ export async function loadHoursLib() {
   }
 }
 
+/** Welche Engine gerade rechnet – für die Anzeige in der UI. */
+export const hoursEngine = () => (OpeningHours ? 'opening_hours.js' : 'eingebauter Parser');
+
 export function isAlways(value) {
   return typeof value === 'string' && /^\s*24\/7\s*$/.test(value);
 }
@@ -28,7 +32,7 @@ export function isOpenAt(value, date) {
   if (!value) return null;
   if (isAlways(value)) return true;
   if (/^\s*(off|closed)\s*$/i.test(value)) return false;
-  if (!OpeningHours) return null;
+  if (!OpeningHours) return isOpenLite(value, date);
   let oh = parsed.get(value);
   if (oh === undefined) {
     try {
@@ -39,7 +43,7 @@ export function isOpenAt(value, date) {
     }
     parsed.set(value, oh);
   }
-  if (!oh) return null;
+  if (!oh) return isOpenLite(value, date);
   try {
     return oh.getState(date);
   } catch {

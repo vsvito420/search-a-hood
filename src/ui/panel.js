@@ -21,7 +21,7 @@ export function renderModules(root, modules, settings, counts, handlers) {
   }
 }
 
-function moduleCard(m, s, count, { onChange, onDelete }) {
+function moduleCard(m, s, count, { onChange, onDelete, onFocus, focusId }) {
   const el = document.createElement('div');
   el.className = `module${s.enabled ? ' on' : ''}`;
   el.style.setProperty('--mcolor', m.color);
@@ -32,6 +32,7 @@ function moduleCard(m, s, count, { onChange, onDelete }) {
         <span class="dot"></span><span>${esc(m.name)}</span>
       </label>
       <span class="count" data-count-for="${esc(m.id)}"></span>
+      ${s.enabled ? `<button class="eye${focusId === m.id ? ' active' : ''}" type="button" title="Heatmap nur für dieses Kriterium" aria-pressed="${focusId === m.id}">◉</button>` : ''}
       ${m.custom ? '<button class="del" type="button" title="Modul löschen">✕</button>' : ''}
     </div>
     <div class="opts">
@@ -59,13 +60,29 @@ function moduleCard(m, s, count, { onChange, onDelete }) {
   });
   setCount(el.querySelector('.count'), count);
   el.querySelector('.del')?.addEventListener('click', () => onDelete(m.id));
+  el.querySelector('.eye')?.addEventListener('click', () => onFocus?.(m.id));
   return el;
 }
 
 function setCount(span, count) {
   span.classList.toggle('err', !!count?.error);
-  span.textContent = count?.error ? 'Fehler' : count ? String(count.n) : '';
-  span.title = count?.error ? count.error : count ? 'Treffer im analysierten Gebiet' : '';
+  if (count?.error) {
+    span.textContent = 'Fehler';
+    span.title = count.error;
+    return;
+  }
+  if (!count) {
+    span.textContent = '';
+    span.title = '';
+    return;
+  }
+  // Datenqualität: Wie viele Treffer haben überhaupt Öffnungszeiten in OSM?
+  const q = count.hoursShare != null ? ` · ⏱${Math.round(count.hoursShare * 100)}%` : '';
+  span.textContent = `${count.n}${q}`;
+  span.title =
+    `${count.n} Treffer im analysierten Gebiet` +
+    (count.total != null && count.total !== count.n ? ` (von ${count.total} vor Filter)` : '') +
+    (q ? `\n${Math.round(count.hoursShare * 100)} % davon haben opening_hours in OSM – bei „nur geöffnet“ zählen nur diese.` : '');
 }
 
 /** Aktualisiert nur die Trefferzahlen, ohne die Liste neu zu bauen. */

@@ -62,6 +62,20 @@ await step('Top-Lage → Report', async () => {
 });
 await snap('1-luftlinie');
 
+await step('Einzelansicht + relative Skala', async () => {
+  await page.evaluate(() => void window.searchAHood.map.closePopup());
+  await click('[data-tab="criteria"]');
+  await click('.module.on .eye');
+  await waitStatus(/Einzelansicht/);
+  await click('#relative');
+  const legend = `${await page.textContent('#legend-lo')}–${await page.textContent('#legend-hi')}`;
+  const s = await status();
+  await click('.module.on .eye.active');
+  await waitStatus(/^(?!◉)/);
+  await click('#relative');
+  return `${s.split('·')[0].trim()} · Legende ${legend}`;
+});
+
 await step('Fußwege-Modus', async () => {
   await page.evaluate(() => void window.searchAHood.map.closePopup());
   await click('#dist-mode [data-mode="walk"]');

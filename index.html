@@ -52,7 +52,7 @@
           <button type="button" data-time="sun11">So 11 Uhr</button>
           <button type="button" data-time="night3">3 Uhr nachts</button>
         </div>
-        <p class="hint">Gilt für Module mit „nur geöffnet“.</p>
+        <p class="hint">Gilt für Module mit „nur geöffnet“. Auswertung: <span id="hours-engine"></span>.</p>
       </section>
 
       <section>
@@ -162,6 +162,8 @@
           <tr><td><kbd>/</kbd></td><td>Adresssuche</td></tr>
           <tr><td><kbd>W</kbd></td><td>Luftlinie ↔ Fußwege</td></tr>
           <tr><td><kbd>I</kbd></td><td>Isochrone am letzten Klickpunkt</td></tr>
+          <tr><td><kbd>R</kbd></td><td>Relative Farbskala</td></tr>
+          <tr><td>◉ am Modul</td><td>Heatmap nur für dieses Kriterium</td></tr>
           <tr><td><kbd>Shift</kbd>+Klick</td><td>Kandidat an Position anlegen</td></tr>
           <tr><td><kbd>1</kbd>–<kbd>4</kbd></td><td>Tabs wechseln</td></tr>
         </table>
@@ -182,14 +184,15 @@
     <div id="map"></div>
     <div id="toolbar">
       <button id="analyze-btn" class="primary" type="button">🔍 Sichtbares Gebiet analysieren</button>
-      <label class="opacity">Heatmap <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.55" /></label>
+      <label class="opacity">Heatmap <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.55" />
+        <span title="Farbskala auf den sichtbaren Bereich strecken (R)"><input id="relative" type="checkbox" /> relativ</span></label>
       <button id="iso-btn" type="button" title="Isochrone: 5/10/15 min zu Fuß vom letzten Klickpunkt">⏱ Isochrone</button>
     </div>
     <div id="status" role="status" aria-live="polite"></div>
     <div id="results" hidden>
       <div class="row between"><h3>Top-Lagen</h3><button id="results-close" class="link" type="button" aria-label="schließen">✕</button></div>
       <ol id="top-list"></ol>
-      <div class="legend"><span>schlecht</span><i></i><span>top</span></div>
+      <div class="legend"><span id="legend-lo">0 %</span><i></i><span id="legend-hi">100 %</span></div>
       <p class="hint">Grau = Pflichtkriterium verletzt. Klick auf die Karte → Standort-Report.</p>
     </div>
   </main>

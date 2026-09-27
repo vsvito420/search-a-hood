@@ -27,6 +27,17 @@ export function parseCandidateLines(text) {
   return out;
 }
 
+/** "Wiener Straße 10, Kreuzberg, Berlin" statt der langen Nominatim-Kette. */
+export function shortAddress(hit) {
+  const a = hit.address;
+  if (!a) return hit.display_name;
+  const street = [a.road || a.pedestrian || a.footway || a.square, a.house_number].filter(Boolean).join(' ');
+  const area = a.suburb || a.city_district || a.quarter || a.neighbourhood;
+  const city = a.city || a.town || a.village || a.municipality;
+  const parts = [street || hit.name, area, city].filter(Boolean);
+  return parts.length ? [...new Set(parts)].join(', ') : hit.display_name;
+}
+
 /** Nominatim mit 1 Anfrage/Sekunde (Nutzungsrichtlinie) und Cache. */
 export function createGeocoder({ fetchImpl = globalThis.fetch, cache = new Map(), minInterval = 1100 } = {}) {
   let last = 0;
@@ -37,11 +48,11 @@ export function createGeocoder({ fetchImpl = globalThis.fetch, cache = new Map()
     const wait = Math.max(0, last + minInterval - Date.now());
     if (wait) await new Promise((r) => setTimeout(r, wait));
     last = Date.now();
-    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=0&q=${encodeURIComponent(q)}`;
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&q=${encodeURIComponent(q)}`;
     const res = await fetchImpl(url, { headers: { 'Accept-Language': 'de' } });
     if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
     const [hit] = await res.json();
-    const r = hit ? { lat: +hit.lat, lon: +hit.lon, display: hit.display_name } : null;
+    const r = hit ? { lat: +hit.lat, lon: +hit.lon, display: shortAddress(hit), full: hit.display_name } : null;
     cache.set(key, r);
     return r;
   };

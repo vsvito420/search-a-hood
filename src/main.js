@@ -10,7 +10,7 @@ import { isValidSelector } from './core/tagfilter.js';
 import { analyzeArea, evaluatePoint, searchRadius } from './core/analyzer.js';
 import { scoreColor } from './core/scoring.js';
 import { bboxAreaKm2, padBbox } from './core/geo.js';
-import { loadHoursLib, isOpenAt } from './core/hours.js';
+import { loadHoursLib, isOpenAt, hoursEngine } from './core/hours.js';
 import { WalkGraph, NetworkField, isochrone, buildWalkQuery, WALK_SPEED_M_PER_MIN } from './core/routing.js';
 import { parseCandidateLines, createGeocoder, toCSV, pricePerSqm } from './core/candidates.js';
 import { renderModules, renderPresets, updateCounts } from './ui/panel.js';
@@ -40,6 +40,8 @@ const state = {
   lastClick: null,
   candidates: store.get('candidates', []),
   candSort: { key: 'score', dir: -1 },
+  focusModule: null, // Heatmap nur für ein Kriterium
+  relative: store.get('relative', false),
 };
 
 function loadModules() {
@@ -159,6 +161,12 @@ function refreshPanel() {
       if ('enabled' in patch) refreshPanel();
       onSettingsChanged();
     },
+    onFocus(id) {
+      state.focusModule = state.focusModule === id ? null : id;
+      refreshPanel();
+      scheduleRebuild();
+    },
+    focusId: state.focusModule,
     onDelete(id) {
       state.customDefs = state.customDefs.filter((d) => d.id !== id);
       store.set('custom', state.customDefs);
@@ -259,6 +267,13 @@ $('#search-form').addEventListener('submit', async (e) => {
 });
 
 $('#opacity').addEventListener('input', (e) => heatLayer?.setOpacity(+e.target.value));
+const relBox = $('#relative');
+relBox.checked = state.relative;
+relBox.addEventListener('change', () => {
+  state.relative = relBox.checked;
+  store.set('relative', state.relative);
+  if (state.lastResult) drawHeatmap(state.lastResult);
+});
 $('#analyze-btn').addEventListener('click', () => analyze());
 $('#results-close').addEventListener('click', () => ($('#results').hidden = true));
 $('#iso-btn').addEventListener('click', () => drawIsochrone());
@@ -407,7 +422,12 @@ function rebuild() {
       continue;
     }
     const elements = filterElements(m, s, d.elements);
-    state.counts[m.id] = { n: elements.length };
+    const withHours = m.supportsHours ? d.elements.filter((el) => el.tags?.opening_hours).length : null;
+    state.counts[m.id] = {
+      n: elements.length,
+      total: d.elements.length,
+      hoursShare: withHours != null && d.elements.length ? withHours / d.elements.length : null,
+    };
     const points = elementsToPoints(elements, m.geometry);
     state.layers.set(m.id, { module: m, settings: s, index: distanceSource(m, s, points), elements });
     if (s.showMarkers) drawMarkers(m, s, elements);
@@ -430,7 +450,11 @@ function rebuild() {
   }
 
   const t0 = performance.now();
-  const res = analyzeArea(state.bbox, [...state.layers.values()]);
+  // Einzelansicht: nur ein Kriterium, ohne Pflicht-Ausschluss – zeigt, wo genau es hakt.
+  const focus = state.focusModule && state.layers.get(state.focusModule);
+  if (state.focusModule && !focus) state.focusModule = null;
+  const layers = focus ? [{ ...focus, settings: { ...focus.settings, required: false, weight: 1 } }] : [...state.layers.values()];
+  const res = analyzeArea(state.bbox, layers);
   state.lastResult = res;
   drawHeatmap(res);
   drawTop(res.top);
@@ -444,7 +468,8 @@ function rebuild() {
         : ` · ⚠ Fußwege nicht verfügbar (${state.graph?.error || '?'}) – Luftlinie`
       : '';
   setStatus(
-    `${res.grid.rows}×${res.grid.cols} Zellen in ${ms} ms · ${pct} % erfüllen alle Pflichtkriterien${walk}` +
+    (focus ? `◉ Einzelansicht „${focus.module.name}“ · ` : '') +
+      `${res.grid.rows}×${res.grid.cols} Zellen in ${ms} ms · ${pct} % erfüllen alle Pflichtkriterien${walk}` +
       (errors.length ? ` · ⚠ nicht geladen (ignoriert): ${errors.map((m) => m.name).join(', ')}` : ''),
     !!errors.length,
   );
@@ -480,6 +505,17 @@ function drawMarkers(m, s, elements) {
 }
 
 function drawHeatmap({ grid, scores }) {
+  // Relative Skala: schlechteste sichtbare Zelle = rot, beste = grün. Hilft, wenn alles „gut“ ist.
+  let lo = 0;
+  let hi = 1;
+  if (state.relative) {
+    lo = Infinity;
+    hi = -Infinity;
+    for (const s of scores) if (!Number.isNaN(s)) (lo = Math.min(lo, s)), (hi = Math.max(hi, s));
+    if (!(hi > lo)) (lo = 0), (hi = 1);
+  }
+  $('#legend-lo').textContent = `${Math.round(lo * 100)} %`;
+  $('#legend-hi').textContent = `${Math.round(hi * 100)} %`;
   const canvas = document.createElement('canvas');
   canvas.width = grid.cols;
   canvas.height = grid.rows;
@@ -488,7 +524,7 @@ function drawHeatmap({ grid, scores }) {
   for (let i = 0; i < scores.length; i++) {
     const s = scores[i];
     if (Number.isNaN(s)) img.data.set([60, 60, 60, 170], i * 4);
-    else img.data.set([...scoreColor(s), 255], i * 4);
+    else img.data.set([...scoreColor((s - lo) / (hi - lo)), 255], i * 4);
   }
   ctx.putImageData(img, 0, 0);
   const { south, west, north, east } = grid.bbox;
@@ -831,6 +867,8 @@ const palette = createPalette($('#palette'), () => [
   { label: '🚶 Entfernung: echte Fußwege', hint: 'W', run: () => setDistMode('walk') },
   { label: '📏 Entfernung: Luftlinie', hint: 'W', run: () => setDistMode('air') },
   { label: '⏱ Isochrone am letzten Klickpunkt', hint: 'I', run: () => drawIsochrone() },
+  { label: '🎚 Relative Farbskala an/aus', hint: 'R', run: () => relBox.click() },
+  ...(state.focusModule ? [{ label: '◉ Einzelansicht beenden', run: () => ((state.focusModule = null), refreshPanel(), scheduleRebuild()) }] : []),
   { label: '🔗 Permalink kopieren', run: () => $('#permalink-btn').click() },
   { label: '⬇ Kandidaten als CSV', run: () => $('#export-cand').click() },
   { label: '⬇ Heatmap als GeoJSON', run: () => $('#export-geojson').click() },
@@ -866,6 +904,7 @@ document.addEventListener('keydown', (e) => {
   else if (k === '/') (e.preventDefault(), $('#search-input').focus());
   else if (k === 'w') setDistMode(state.distMode === 'walk' ? 'air' : 'walk');
   else if (k === 'i') drawIsochrone();
+  else if (k === 'r') relBox.click();
   else if (k === 'escape') map.closePopup();
   else if (/^[1-4]$/.test(k)) showTab(['criteria', 'candidates', 'layers', 'dev'][+k - 1]);
 });
@@ -876,7 +915,9 @@ document.addEventListener('keydown', (e) => {
 refreshPanel();
 renderCandidates();
 setStatus(fromLink ? 'Permalink geladen – „analysieren“ drücken (A).' : 'Viertel wählen, Preset oder Module einstellen, dann „analysieren“ (A). ⌘K für alles andere.');
-loadHoursLib().then((ok) => ok && scheduleRebuild());
+const showEngine = () => ($('#hours-engine').textContent = hoursEngine());
+showEngine();
+loadHoursLib().then((ok) => (showEngine(), ok && scheduleRebuild()));
 
 // Für Debugging / eigene Skripte in der DevTools-Konsole
 window.searchAHood = { state, map, modules: state.modules, evaluate, analyze, overlays, formatDist };

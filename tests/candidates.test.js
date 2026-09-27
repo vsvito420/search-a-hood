@@ -66,3 +66,12 @@ test('Fuzzy-Suche', () => {
   assert.equal(fuzzyScore('xyz', 'Späti'), 0);
   assert.ok(fuzzyScore('24 tank', '24/7 Tankstelle') > 0);
 });
+
+test('shortAddress baut kompakte Adresse', async () => {
+  const { shortAddress } = await import('../src/core/candidates.js');
+  assert.equal(
+    shortAddress({ display_name: 'lang', address: { road: 'Wiener Straße', house_number: '10', suburb: 'Kreuzberg', city: 'Berlin' } }),
+    'Wiener Straße 10, Kreuzberg, Berlin',
+  );
+  assert.equal(shortAddress({ display_name: 'Nur Name' }), 'Nur Name');
+});
