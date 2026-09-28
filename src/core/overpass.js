@@ -90,6 +90,12 @@ export function explainOverpassError(body) {
 /** Stand der OSM-Daten der letzten Antwort (osm3s.timestamp_osm_base) – für die Anzeige. */
 export let lastDataTimestamp = null;
 
+/** Optionaler persistenter Cache (z. B. IndexedDB im Browser): {get(key), put(key, value)} */
+let persistent = null;
+export function setPersistentCache(c) {
+  persistent = c;
+}
+
 let customEndpoints = null;
 /** Eigene Overpass-Instanz(en) setzen (null = Standardliste). */
 export function setEndpoints(list) {
@@ -103,6 +109,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  */
 export async function runQuery(query, { signal, endpoints = customEndpoints || ENDPOINTS, timeoutMs = 60_000, rounds = 2, fetchImpl = globalThis.fetch, onAttempt } = {}) {
   if (memCache.has(query)) return memCache.get(query);
+  const cached = persistent && (await persistent.get(query).catch(() => undefined));
+  if (cached) {
+    memCache.set(query, cached.elements);
+    if (cached.ts) lastDataTimestamp = cached.ts;
+    return cached.elements;
+  }
   let lastErr;
   for (let round = 0; round < rounds; round++) {
     if (round) await sleep(2000 * round);
@@ -130,6 +142,7 @@ export async function runQuery(query, { signal, endpoints = customEndpoints || E
         const elements = json.elements || [];
         if (json.osm3s?.timestamp_osm_base) lastDataTimestamp = json.osm3s.timestamp_osm_base;
         memCache.set(query, elements);
+        persistent?.put(query, { elements, ts: json.osm3s?.timestamp_osm_base }).catch(() => {});
         return elements;
       } catch (e) {
         if (signal?.aborted) throw e;

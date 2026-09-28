@@ -4,7 +4,11 @@ import { PRESETS } from './presets.js';
 import { store } from './app/store.js';
 import { encodeState, decodeState, sanitize } from './app/permalink.js';
 import { SpatialIndex } from './core/spatial-index.js';
-import { elementsToPoints, runQuery, setEndpoints, lastDataTimestamp } from './core/overpass.js';
+import { elementsToPoints, runQuery, setEndpoints, lastDataTimestamp, setPersistentCache } from './core/overpass.js';
+import { cacheGet, cachePut, cacheClear } from './app/idb-cache.js';
+
+// Overpass-Antworten 24 h im Browser behalten: schneller beim Wiederkommen, schont die freien Server
+setPersistentCache({ get: cacheGet, put: cachePut });
 import { DataStore, bboxKey } from './core/datastore.js';
 import { isValidSelector } from './core/tagfilter.js';
 import { analyzeArea, evaluatePoint, searchRadius } from './core/analyzer.js';
@@ -1031,6 +1035,10 @@ function download(name, content, type) {
 }
 
 $('#permalink-btn').addEventListener('click', () => copy(`${location.origin}${location.pathname}#s=${currentEncoded()}`, 'Permalink'));
+$('#cache-clear').addEventListener('click', async () => {
+  await cacheClear();
+  setStatus('Daten-Cache geleert – nächste Analyse lädt frisch von Overpass.');
+});
 $('#copy-query').addEventListener('click', () => copy(state.data.lastQuery || '', 'Overpass-Abfrage'));
 $('#config-export').addEventListener('click', () =>
   download(
@@ -1306,7 +1314,8 @@ async function applyQueryParams() {
     if (hit) point = L.latLng(hit.lat, hit.lon);
     else setStatus(`Adresse nicht gefunden: ${q.get('addr')}`, true);
   }
-  if (point) map.setView(point, zoom);
+  // ohne Animation: analyze() liest sofort die Kartengrenzen – sonst wäre es noch der alte Ausschnitt
+  if (point) map.setView(point, zoom, { animate: false });
   if (q.get('run') === '1') {
     await analyze();
     if (point) showReport(point);

@@ -164,6 +164,8 @@ Optionen: `--preset/-p`, `--modules/-m a,b,c`, `--set/-s modul.key=wert` (mehrfa
 
 **Öffnungszeiten:** Primär wird [opening_hours.js](https://github.com/opening-hours/opening_hours.js) verwendet, lazy geladen und mit Feiertagen. Fällt das aus, übernimmt ein eingebauter Parser (`src/core/oh-lite.js`) die gängigen Muster: Tagesbereiche, Mittagspausen, Zeiten über Mitternacht, `off`, `24/7`. Kann er einen Wert nicht sicher auswerten, gilt er als unbekannt, er wird nie geraten.
 
+**Cache:** Overpass-Antworten (inklusive Wegenetz) liegen 24 h in IndexedDB. Ein erneuter Besuch desselben Gebiets braucht dann keine Serveranfrage mehr, im Test sank die Zeit von 33 s auf 4 s. Im Dev-Tab lässt sich der Cache leeren.
+
 **Tag-Filter:** Alle Module gehen in **eine** Overpass-Abfrage. Ein eigener Parser für Overpass-QL-Filter (`[k=v]`, `[k~"re",i]`, `[k!=v]`, `[!k]` …) verteilt die Antwort lokal auf die Module. Schlägt die Sammelabfrage fehl, wird einzeln nachgeladen, und die Instanz wird bei Fehlern gewechselt (mit Backoff).
 
 ---

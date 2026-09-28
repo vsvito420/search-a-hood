@@ -113,3 +113,17 @@ test('Overpass-Fehlerseiten werden verständlich übersetzt', async () => {
   const ok = async () => ({ ok: true, text: async () => '{"elements":[{"type":"node","id":1}],"osm3s":{"timestamp_osm_base":"2026-09-28T00:00:00Z"}}' });
   assert.equal((await runQuery('[out:json];node(2);out;', { endpoints: ['https://b.example/api'], fetchImpl: ok })).length, 1);
 });
+
+test('runQuery nutzt den persistenten Cache (Treffer ohne Netz, Schreiben nach Abruf)', async () => {
+  const { runQuery, setPersistentCache } = await import('../src/core/overpass.js');
+  const store = new Map([['Q-CACHED', { elements: [{ type: 'node', id: 7 }], ts: '2026-09-28T00:00:00Z' }]]);
+  setPersistentCache({ get: async (k) => store.get(k), put: async (k, v) => store.set(k, v) });
+  let calls = 0;
+  const fetchImpl = async () => (calls++, { ok: true, text: async () => '{"elements":[{"type":"node","id":8}]}' });
+  assert.equal((await runQuery('Q-CACHED', { fetchImpl, endpoints: ['https://x.example'] }))[0].id, 7);
+  assert.equal(calls, 0);
+  await runQuery('Q-NEW', { fetchImpl, endpoints: ['https://x.example'] });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(store.get('Q-NEW').elements[0].id, 8);
+  setPersistentCache(null);
+});
