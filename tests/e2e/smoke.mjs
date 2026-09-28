@@ -235,6 +235,17 @@ await step('Permalink', async () => {
   return `${link.length} Zeichen`;
 });
 
+await step('⚖ Einzelbewertung (Kandidat in Spandau, weit außerhalb)', async () => {
+  await click('[data-tab="candidates"]');
+  await page.fill('#cand-input', '52.53626, 13.20223 | 950 | 60');
+  await click('#cand-add');
+  await page.waitForFunction(() => document.querySelectorAll('#cand-table tbody tr').length >= 4);
+  await click('#cand-score');
+  await waitStatus(/Kandidaten in .* bewertet|fehlgeschlagen/);
+  const scores = await page.$$eval('#cand-table tbody tr', (rows) => rows.map((r) => r.children[2].textContent.trim()).join(' | '));
+  return `${(await status()).split('·')[0].trim()} · ${scores}`;
+});
+
 await step('Deep-Link ?at=…&preset=nachteule&run=1 (frischer Browser)', async () => {
   // eigener Kontext = leerer localStorage, wie bei jemandem, der den Link geschickt bekommt
   const fresh = await browser.newContext({ viewport: { width: 1280, height: 800 }, ignoreHTTPSErrors: true });

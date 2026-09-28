@@ -19,7 +19,7 @@ import { OverlayManager } from './ui/overlays.js';
 import { renderCandidateTable, sortValue } from './ui/candidates.js';
 import { createPalette } from './ui/palette.js';
 import { buildReportHtml, openReport } from './ui/report.js';
-import { osrmField, transitField, transitReach, CommuteIndex, COMMUTE_MODES } from './core/commute.js';
+import { osrmField, transitField, transitReach, CommuteIndex, COMMUTE_MODES, nextWorkday } from './core/commute.js';
 import { ShareField, ShareIndex } from './core/share.js';
 import { scorePlaces } from './core/places.js';
 
@@ -366,16 +366,6 @@ async function ensureGraph(bbox = state.data.bbox, slot = 'graph') {
 
 // ---------- Pendel-Ziele ----------
 const commuteCache = new Map(); // key -> {field} | {error}
-
-/** Nächster Werktag zur Uhrzeit hh:mm (lokal) – für ÖPNV-Ankunft. */
-function nextWorkday(hhmm = '08:30') {
-  const [h, mi] = hhmm.split(':').map(Number);
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
-  d.setHours(h, mi, 0, 0);
-  return d;
-}
 
 /** ÖPNV-Suchhorizont in 30-min-Stufen – sonst löst jeder Slider-Schritt eine neue Anfrage aus. */
 const transitHorizon = (minutes) => Math.min(90, Math.ceil((minutes * 2) / 30) * 30);

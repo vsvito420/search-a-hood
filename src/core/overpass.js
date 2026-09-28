@@ -78,6 +78,15 @@ export function elementsToPoints(elements, geometry = 'point') {
 
 const memCache = new Map();
 
+/** Overpass antwortet bei Überlast mit HTML/XML statt JSON – daraus eine verständliche Meldung machen. */
+export function explainOverpassError(body) {
+  if (/rate_limited|too many requests/i.test(body)) return 'Rate-Limit – kurz warten und erneut versuchen';
+  if (/timeout|timed out/i.test(body)) return 'Zeitüberschreitung – kleineres Gebiet wählen oder später erneut';
+  if (/out of memory/i.test(body)) return 'Abfrage zu groß – kleineres Gebiet wählen';
+  const remark = body.match(/<strong[^>]*>\s*Error\s*<\/strong>\s*:?\s*([^<]{3,160})/i)?.[1];
+  return remark ? `Serverfehler: ${remark.trim()}` : 'unerwartete Antwort (kein JSON)';
+}
+
 /** Stand der OSM-Daten der letzten Antwort (osm3s.timestamp_osm_base) – für die Anzeige. */
 export let lastDataTimestamp = null;
 
@@ -106,8 +115,15 @@ export async function runQuery(query, { signal, endpoints = customEndpoints || E
           // Eigenes Timeout pro Instanz, damit eine hängende Instanz nicht alles blockiert.
           signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
         });
-        if (!res.ok) throw new Error(`${new URL(url).host}: HTTP ${res.status}`);
-        const json = await res.json();
+        const host = new URL(url).host;
+        if (!res.ok) throw new Error(`${host}: ${res.status === 429 ? 'Rate-Limit (zu viele Anfragen)' : res.status === 504 ? 'Zeitüberschreitung (Server ausgelastet)' : `HTTP ${res.status}`}`);
+        const text = await res.text();
+        let json;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          throw new Error(`${host}: ${explainOverpassError(text)}`);
+        }
         if (json.remark && /runtime error|timed out|out of memory/i.test(json.remark)) {
           throw new Error(`${new URL(url).host}: ${json.remark}`);
         }

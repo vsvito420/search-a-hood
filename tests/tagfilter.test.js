@@ -102,3 +102,14 @@ test('Flächen-Module: Query mit Relationen + zugeschnittener Geometrie, Klassif
   assert.deepEqual(c.get('parkpoint').map((e) => e.type + e.id), ['way1']);
   assert.ok(!c.get('parkpoint')[0].geometry);
 });
+
+test('Overpass-Fehlerseiten werden verständlich übersetzt', async () => {
+  const { explainOverpassError, runQuery } = await import('../src/core/overpass.js');
+  assert.match(explainOverpassError('<?xml ...><p><strong style="color:#FF0000">Error</strong>: runtime error: Query timed out</p>'), /Zeitüberschreitung/);
+  assert.match(explainOverpassError('Dispatcher_Client::request_read_and_idx::rate_limited'), /Rate-Limit/);
+  assert.match(explainOverpassError('<html><strong>Error</strong>: line 1: parse error</html>'), /Serverfehler: line 1: parse error/);
+  const fetchImpl = async () => ({ ok: true, text: async () => '<?xml version="1.0"?><osm>rate_limited</osm>' });
+  await assert.rejects(runQuery('[out:json];node(1);out;', { endpoints: ['https://a.example/api'], rounds: 1, fetchImpl }), /a\.example: Rate-Limit/);
+  const ok = async () => ({ ok: true, text: async () => '{"elements":[{"type":"node","id":1}],"osm3s":{"timestamp_osm_base":"2026-09-28T00:00:00Z"}}' });
+  assert.equal((await runQuery('[out:json];node(2);out;', { endpoints: ['https://b.example/api'], fetchImpl: ok })).length, 1);
+});

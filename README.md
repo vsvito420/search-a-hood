@@ -25,7 +25,7 @@
 | ⏱ **Isochronen** | Was ist in 5/10/15 Minuten zu Fuß erreichbar? Die Darstellung ist ein Netz aus Straßensegmenten. Dazu kommt eine **ÖPNV-Isochrone**: alle Haltestellen, die ab dem Klickpunkt in 30 min mit echtem Fahrplan erreichbar sind, inklusive Umstiegen. |
 | 🕒 **Öffnungszeiten** | Mit „nur geöffnet“ zählen nur Treffer, die zum gewählten Zeitpunkt offen sind. Schnellwahl für Fr 23 Uhr, 3 Uhr nachts usw. |
 | 📅 **Wochen-Zeitraffer** | Mit dem Slider oder ▶ gehst du stundenweise durch die Woche, die Heatmap rechnet live mit. |
-| 🏠 **Wohnungsvergleich** | Adressen aus Inseraten einfügen (`Adresse \| Miete \| m² \| Link`). Sie werden geocodiert, bewertet und in einer sortierbaren **Score-Matrix** gezeigt (Zelle = Kriterium, Farbe = Erfüllungsgrad), CSV-Export inklusive. |
+| 🏠 **Wohnungsvergleich** | Adressen aus Inseraten einfügen (`Adresse \| Miete \| m² \| Link`). Sie werden geocodiert, bewertet und in einer sortierbaren **Score-Matrix** gezeigt (Zelle = Kriterium, Farbe = Erfüllungsgrad), CSV-Export inklusive. Mit **⚖ Einzelbewertung** geht das auch, wenn die Wohnungen über die ganze Stadt verteilt sind. |
 | 📄 **Steckbrief** | Druckbare Seite pro Lage: Kurzfazit („Stark: … Schwach: …“), Score, Abzüge, nächste Treffer mit Öffnungsstatus, Anzahl in 5/10/15 min, Karte |
 | 🌐 **Glasfaser & Co.** | Breitbandatlas der BNetzA als WMS-Overlay, am Klickpunkt per GetFeatureInfo abfragbar. Dazu OSM-Indikatoren (Telekom-Verteiler, Mobilfunkmasten, freies WLAN). |
 | 🗺 **Overlays** | Beliebige WMS- oder XYZ-Dienste (Lärmkarten, Hochwasser, Bodenrichtwerte …), Layer-Liste per GetCapabilities |
@@ -249,6 +249,7 @@ src/
     share.js                 Flächenanteil: Ringe zusammensetzen, Scanline-Raster, Summed-Area-Table
     analyzer.js · scoring.js Raster, Score, Pflicht, Gleichstand, Top-Spots
     hours.js · oh-lite.js    Öffnungszeiten (Bibliothek + eigener Fallback-Parser)
+    places.js                Einzelbewertung: Orte gruppieren, kleine Abfragen, Ziele exakt (CLI + Web)
     candidates.js            Eingabe-Parser, Geocoder (1 req/s + Cache), CSV
     geo.js                   Distanzen, Raster, Linien verdichten, bbox-Padding
   modules/                   ein Kriterium pro Datei + Registry
@@ -260,12 +261,13 @@ tests/                       node:test (Unit) + e2e/smoke.mjs (Playwright)
 
 ```bash
 npm run bench                              # Hot Path: Raster-Analyse, Graph-Aufbau, Dijkstra
+npm run lint                               # ESLint (ohne Plugins, Konfiguration in eslint.config.js)
 npm test                                   # Unit-Tests: Geo, Index, Scoring, Tag-Filter, Routing, Öffnungszeiten, CLI …
 npm start & node tests/e2e/smoke.mjs shot  # End-to-End im echten Chromium, speichert Screenshots
 OVERPASS_VIA_CURL=1 node tests/e2e/smoke.mjs   # hinter Proxies, die CORS-Header entfernen
 ```
 
-GitHub Actions führt Syntax-Check und Unit-Tests auf Node 20 und 22 aus (`.github/workflows/ci.yml`). `pages.yml` veröffentlicht die App auf GitHub Pages. Dafür einmalig unter Settings → Pages die Source „GitHub Actions“ wählen.
+GitHub Actions führt Syntax-Check, Lint und Unit-Tests auf Node 20 und 22 aus (`.github/workflows/ci.yml`). `pages.yml` veröffentlicht die App auf GitHub Pages. Dafür einmalig unter Settings → Pages die Source „GitHub Actions“ wählen.
 
 ---
 
