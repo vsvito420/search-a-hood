@@ -22,6 +22,7 @@ import { poiPopup, reportPopup, formatDist, esc, summarize } from './ui/popups.j
 import { OverlayManager } from './ui/overlays.js';
 import { renderCandidateTable, sortValue } from './ui/candidates.js';
 import { createPalette } from './ui/palette.js';
+import { applyIcons } from './ui/icons.js';
 import { buildReportHtml, openReport } from './ui/report.js';
 import { osrmField, transitField, transitReach, CommuteIndex, COMMUTE_MODES, nextWorkday } from './core/commute.js';
 import { ShareField, ShareIndex } from './core/share.js';
@@ -98,7 +99,7 @@ const dataModules = () => enabledModules().filter((m) => m.kind !== 'target');
 // =====================================================================
 const view = fromLink?.view || store.get('view', { center: [52.52, 13.405], zoom: 14 });
 if (!Array.isArray(view.center) && view.center) view.center = [view.center.lat, view.center.lng];
-const map = L.map('map', { preferCanvas: true, zoomControl: true }).setView(view.center, view.zoom);
+const map = L.map('map', { preferCanvas: true, zoomControl: false, tapHold: true }).setView(view.center, view.zoom);
 const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
   attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -111,6 +112,7 @@ const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}
   maxZoom: 20,
   attribution: '© OpenStreetMap, © CARTO',
 });
+L.control.zoom({ position: 'bottomright' }).addTo(map);
 L.control.layers({ 'OSM Standard': osm, 'Hell (CARTO)': light, 'Dunkel (CARTO)': dark }, {}, { position: 'bottomright' }).addTo(map);
 L.control.scale({ imperial: false }).addTo(map);
 map.on('moveend', () => store.set('view', { center: map.getCenter(), zoom: map.getZoom() }));
@@ -128,10 +130,16 @@ let isoLayer = null;
 // =====================================================================
 const $ = (s) => document.querySelector(s);
 const statusEl = $('#status');
+let statusTimer = 0;
 function setStatus(msg, isError = false) {
   statusEl.textContent = msg;
   statusEl.classList.toggle('error', isError);
+  // Hinweise blenden nach ein paar Sekunden aus (Text bleibt für Screenreader erhalten), Fehler bleiben stehen
+  statusEl.classList.remove('faded');
+  clearTimeout(statusTimer);
+  if (!isError) statusTimer = setTimeout(() => statusEl.classList.add('faded'), 7000);
 }
+statusEl.addEventListener('mouseenter', () => statusEl.classList.remove('faded'));
 
 // Tabs
 const tabs = [...document.querySelectorAll('[data-tab]')];
@@ -303,11 +311,44 @@ relBox.addEventListener('change', () => {
 $('#analyze-btn').addEventListener('click', () => analyze());
 $('#results-close').addEventListener('click', () => ($('#results').hidden = true));
 $('#iso-btn').addEventListener('click', () => drawIsochrone());
+// Karte frei bewegen: Ein normaler Klick/Tipp öffnet nichts. Report per Rechtsklick / langem Tippen
+// (Leaflet meldet beides als „contextmenu“) oder im Prüfmodus per Klick.
+let inspectMode = store.get('inspect', false);
+function setInspect(on) {
+  inspectMode = on;
+  store.set('inspect', on);
+  $('#inspect-btn').setAttribute('aria-pressed', String(on));
+  map.getContainer().classList.toggle('inspecting', on);
+}
+setInspect(inspectMode);
+$('#inspect-btn').addEventListener('click', () => {
+  setInspect(!inspectMode);
+  setStatus(inspectMode ? '🎯 Prüfmodus an: Klick auf die Karte öffnet den Standort-Report.' : 'Prüfmodus aus: Karte frei bewegen. Report per Rechtsklick oder langem Tippen.');
+});
+function inspectAt(latlng) {
+  state.lastClick = latlng;
+  showReport(latlng);
+}
 map.on('click', (e) => {
   if (e.originalEvent.shiftKey) return addCandidateAt(e.latlng);
-  state.lastClick = e.latlng;
-  showReport(e.latlng);
+  if (inspectMode) inspectAt(e.latlng);
 });
+map.on('contextmenu', (e) => {
+  e.originalEvent.preventDefault?.();
+  inspectAt(e.latlng);
+});
+
+// Seitenleiste einklappen → mehr Platz für die Karte
+function setSidebar(collapsed) {
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  $('#sidebar-btn').setAttribute('aria-pressed', String(collapsed));
+  store.set('sidebarCollapsed', collapsed);
+  // Leaflet muss die neue Größe kennen, sonst bleiben graue Kachel-Lücken
+  setTimeout(() => map.invalidateSize(), 220);
+}
+setSidebar(store.get('sidebarCollapsed', false));
+$('#sidebar-btn').addEventListener('click', () => setSidebar(!document.body.classList.contains('sidebar-collapsed')));
+new ResizeObserver(() => map.invalidateSize()).observe($('#map-wrap'));
 
 // Overlays
 const overlays = new OverlayManager(map, store, setStatus);
@@ -412,6 +453,7 @@ function drawTargets() {
   }
 }
 
+if (state.targets.length) $('#targets-box').open = true;
 $('#target-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
@@ -728,7 +770,7 @@ function evaluate(lat, lon) {
 
 async function showReport(latlng) {
   if (!state.layers.size) {
-    setStatus('Erst „Sichtbares Gebiet analysieren“ klicken.');
+    setStatus('Erst das Gebiet analysieren (🔍 oder Taste A).');
     return;
   }
   const r = evaluate(latlng.lat, latlng.lng);
@@ -769,7 +811,7 @@ async function showReport(latlng) {
 // Isochrone
 // =====================================================================
 async function drawIsochrone(latlng = state.lastClick) {
-  if (!latlng) return setStatus('Erst auf die Karte klicken, dann Isochrone.', true);
+  if (!latlng) return setStatus('Erst einen Punkt prüfen (Rechtsklick / lange tippen oder 🎯), dann Isochrone.', true);
   map.closePopup();
   // Vorhandenes Netz nutzen, wenn der Punkt mit 15-min-Radius hineinpasst, sonst kleines Gebiet um den Punkt laden.
   const around = padBbox({ south: latlng.lat, west: latlng.lng, north: latlng.lat, east: latlng.lng }, 1300);
@@ -1206,7 +1248,7 @@ const palette = createPalette($('#palette'), () => [
   { label: '🚶 Entfernung: echte Fußwege', hint: 'W', run: () => setDistMode('walk') },
   { label: '📏 Entfernung: Luftlinie', hint: 'W', run: () => setDistMode('air') },
   { label: '⏱ Isochrone am letzten Klickpunkt', hint: 'I', run: () => drawIsochrone() },
-  { label: '🚆 ÖPNV-Isochrone (30 min) am letzten Klickpunkt', run: () => (state.lastClick ? drawTransitIsochrone(state.lastClick) : setStatus('Erst auf die Karte klicken.', true)) },
+  { label: '🚆 ÖPNV-Isochrone (30 min) am letzten Klickpunkt', run: () => (state.lastClick ? drawTransitIsochrone(state.lastClick) : setStatus('Erst einen Punkt prüfen (Rechtsklick / lange tippen).', true)) },
   { label: '🎚 Relative Farbskala an/aus', hint: 'R', run: () => relBox.click() },
   { label: '📅 Wochen-Zeitraffer', hint: 'T', run: () => toggleTimeline(true) },
   { label: '📍 Standort-Check „Hier“ (GPS)', hint: 'H', run: () => checkHere() },
@@ -1218,7 +1260,7 @@ const palette = createPalette($('#palette'), () => [
   ...Object.entries(TIME_PRESETS).map(([k, fn]) => ({ label: `🕒 Zeitpunkt: ${document.querySelector(`[data-time="${k}"]`).textContent}`, run: () => setTime(fn()) })),
   ...PRESETS.map((p) => ({ label: `Preset: ${p.name}`, hint: p.description, run: () => applyPreset(p) })),
   ...state.modules.map((m) => ({
-    label: `${state.settings[m.id].enabled ? '☑' : '☐'} ${m.name}`,
+    label: `${state.settings[m.id].enabled ? '☑' : '☐'} ${m.icon || ''} ${m.name}`,
     hint: `Modul ${state.settings[m.id].enabled ? 'deaktivieren' : 'aktivieren'} · ${m.category}`,
     run: () => {
       state.settings[m.id].enabled = !state.settings[m.id].enabled;
@@ -1231,7 +1273,7 @@ const palette = createPalette($('#palette'), () => [
     .map((c, i) => ({ c, i }))
     .filter(({ c }) => c.lat != null)
     .map(({ c, i }) => ({ label: `★ ${i + 1}. ${c.label}`, hint: 'Kandidat anzeigen', run: () => (showTab('candidates'), map.setView([c.lat, c.lon], 17), state.layers.size && showReport(L.latLng(c.lat, c.lon))) })),
-  ...['criteria', 'candidates', 'layers', 'dev'].map((t, i) => ({ label: `Tab: ${tabs[i].textContent.trim()}`, hint: String(i + 1), run: () => showTab(t) })),
+  ...['criteria', 'candidates', 'layers', 'dev'].map((t, i) => ({ label: `Tab: ${tabs[i].getAttribute('aria-label')}`, hint: String(i + 1), run: () => showTab(t) })),
 ]);
 $('#palette-btn').addEventListener('click', () => palette.open());
 
@@ -1247,6 +1289,8 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'w') setDistMode(state.distMode === 'walk' ? 'air' : 'walk');
   else if (k === 'i') drawIsochrone();
   else if (k === 'r') relBox.click();
+  else if (k === 'p') $('#inspect-btn').click();
+  else if (k === 'b') $('#sidebar-btn').click();
   else if (k === 't') toggleTimeline();
   else if (k === 'h') checkHere();
   else if (k === ' ' && !tl.el.hidden) (e.preventDefault(), togglePlay());
@@ -1257,6 +1301,8 @@ document.addEventListener('keydown', (e) => {
 // =====================================================================
 // Start
 // =====================================================================
+applyIcons();
+
 // Erste Schritte beim ersten Besuch (nicht bei Permalink/Deep-Link)
 if (!store.get('welcomed', false) && !fromLink && !location.search) {
   $('#welcome').hidden = false;
@@ -1269,7 +1315,7 @@ if (!store.get('welcomed', false) && !fromLink && !location.search) {
 refreshPanel();
 renderCandidates();
 drawTargets();
-setStatus(fromLink ? 'Permalink geladen – „analysieren“ drücken (A).' : 'Viertel wählen, Preset oder Module einstellen, dann „analysieren“ (A). ⌘K für alles andere.');
+setStatus(fromLink ? 'Permalink geladen – 🔍 drücken (A).' : 'Viertel wählen, Preset wählen, dann 🔍 (A). Report: Rechtsklick / lange tippen. ⌘K für alles andere.');
 const showEngine = () => ($('#hours-engine').textContent = hoursEngine());
 showEngine();
 loadHoursLib().then((ok) => (showEngine(), ok && scheduleRebuild()));

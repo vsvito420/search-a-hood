@@ -165,7 +165,7 @@ async function score(places, opts) {
     const lines = [
       `### search-a-hood · ${time.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })} · ${graph ? 'Fußwege' : 'Luftlinie'}${opts.preset ? ` · Preset \`${opts.preset}\`` : ''}`,
       '',
-      `| # | Adresse | Score | € | €/m² | ${cols.map((m) => esc(m.name)).join(' | ')} |`,
+      `| # | Adresse | Score | € | €/m² | ${cols.map((m) => esc(m.icon ? `${m.icon} ${m.name}` : m.name)).join(' | ')} |`,
       `|---|---|---|---:|---:|${cols.map(() => '---:').join('|')}|`,
     ];
     results.forEach((r, i) => {
@@ -242,7 +242,7 @@ async function score(places, opts) {
           : c('31', isMin ? `> ${p.settings.distance * 2} ${p.module.unit}` : 'keiner');
       const goal = dim(`${p.settings.mode === 'far' ? '≥' : '≤'} ${isMin ? `${p.settings.distance} ${p.module.unit}` : fmtDist(p.settings.distance)}`);
       const name = p.hit?.item.tags?.name && !isMin ? dim(p.hit.item.tags.name) : '';
-      console.log(`   ${icon} ${pad(p.module.name, 30)} ${pad(d, 22)} ${pad(goal, 12)} ${name}`);
+      console.log(`   ${icon} ${pad(p.module.icon ? `${p.module.icon} ${p.module.name}` : p.module.name, 32)} ${pad(d, 22)} ${pad(goal, 12)} ${name}`);
     }
   });
   for (const e of errors) console.log(c("33", `\n⚠ nicht geladen: ${e.module} – ${e.error}`));
@@ -272,7 +272,7 @@ async function main() {
   if (cmd === 'modules') {
     for (const m of BUILTIN_MODULES) {
       const d = m.defaults;
-      console.log(`${pad(bold(m.id), 20)} ${pad(m.name, 32)} ${dim(`${m.category} · ${d.mode === 'far' ? '≥' : '≤'} ${d.distance} m${m.supportsHours ? ' · ⏱' : ''}`)}`);
+      console.log(`${pad(bold(m.id), 20)} ${pad(`${m.icon} ${m.name}`, 34)} ${dim(`${m.category} · ${d.mode === 'far' ? '≥' : '≤'} ${d.distance} m${m.supportsHours ? ' · ⏱' : ''}`)}`);
     }
     return;
   }

@@ -78,6 +78,34 @@ await step('Top-Lage → Report', async () => {
 });
 await snap('1-luftlinie');
 
+await step('Karte frei bedienbar: Klick ohne Popup, Prüfmodus mit Popup', async () => {
+  await page.evaluate(() => void window.searchAHood.map.closePopup());
+  const fireClick = () =>
+    page.evaluate(() => void window.searchAHood.map.fire('click', { latlng: L.latLng(52.4990, 13.4175), originalEvent: new MouseEvent('click') }));
+  await fireClick();
+  await page.waitForTimeout(300);
+  const plain = await page.locator('.leaflet-popup-content .score').count();
+  await click('#inspect-btn');
+  await fireClick();
+  await page.waitForSelector('.leaflet-popup-content .score');
+  const inspect = await page.locator('.leaflet-popup-content .score').count();
+  await click('#inspect-btn'); // wieder aus
+  await page.evaluate(() => void window.searchAHood.map.closePopup());
+  if (plain !== 0 || inspect !== 1) throw new Error(`Klick-Verhalten falsch: ohne Modus ${plain}, mit Modus ${inspect}`);
+  return 'Klick → kein Popup ✓ · Prüfmodus → Report ✓';
+});
+
+await step('Seitenleiste einklappen → Karte breiter', async () => {
+  const before = await page.$eval('#map', (el) => el.clientWidth);
+  await click('#sidebar-btn');
+  await page.waitForTimeout(400);
+  const after = await page.$eval('#map', (el) => el.clientWidth);
+  await click('#sidebar-btn');
+  await page.waitForTimeout(400);
+  if (!(after > before + 200)) throw new Error(`Karte nicht breiter: ${before} → ${after}`);
+  return `${before}px → ${after}px`;
+});
+
 await step('Einzelansicht + relative Skala', async () => {
   await page.evaluate(() => void window.searchAHood.map.closePopup());
   await click('[data-tab="criteria"]');
@@ -112,7 +140,7 @@ await snap('3-kandidaten');
 await step('Isochrone', async () => {
   await page.evaluate(() => {
     const { map } = window.searchAHood;
-    map.fire('click', { latlng: L.latLng(52.4986, 13.418), originalEvent: new MouseEvent('click') });
+    map.fire('contextmenu', { latlng: L.latLng(52.4986, 13.418), originalEvent: new MouseEvent('click') });
   });
   await click('[data-act="iso"]');
   await waitStatus(/Isochrone:|nicht verfügbar|Kein Weg/);
@@ -123,7 +151,7 @@ await snap('4-isochrone');
 await step('Steckbrief', async () => {
   await page.evaluate(() => {
     const { map } = window.searchAHood;
-    map.fire('click', { latlng: L.latLng(52.4990, 13.4175), originalEvent: new MouseEvent('click') });
+    map.fire('contextmenu', { latlng: L.latLng(52.4990, 13.4175), originalEvent: new MouseEvent('click') });
   });
   const [report] = await Promise.all([ctx.waitForEvent('page'), click('[data-act="report"]')]);
   await report.waitForLoadState('domcontentloaded');
@@ -167,6 +195,7 @@ await step('Wochen-Zeitraffer', async () => {
 
 await step('Pendel-Ziele (Rad + ÖPNV)', async () => {
   await click('[data-tab="criteria"]');
+  await page.evaluate(() => (document.querySelector('#targets-box').open = true));
   const add = async (name, addr, mode, minutes) => {
     await page.fill('#target-form [name="name"]', name);
     await page.fill('#target-form [name="addr"]', addr);
@@ -181,7 +210,7 @@ await step('Pendel-Ziele (Rad + ÖPNV)', async () => {
   const counts = await page.$$eval('.module.on', (els) => els.filter((e) => /Arbeit|Uni/.test(e.textContent)).map((e) => e.querySelector('.count').textContent).join(' / '));
   await page.evaluate(() => {
     const { map } = window.searchAHood;
-    map.fire('click', { latlng: L.latLng(52.4990, 13.4175), originalEvent: new MouseEvent('click') });
+    map.fire('contextmenu', { latlng: L.latLng(52.4990, 13.4175), originalEvent: new MouseEvent('click') });
   });
   await page.waitForSelector('.leaflet-popup-content .score');
   const rows = await page.$$eval('.leaflet-popup-content tr', (trs) => trs.filter((t) => /Arbeit|Uni/.test(t.textContent)).map((t) => t.textContent.replace(/\s+/g, ' ').trim()));
@@ -192,7 +221,7 @@ await step('Pendel-Ziele (Rad + ÖPNV)', async () => {
 await step('ÖPNV-Isochrone', async () => {
   await page.evaluate(() => {
     const { map } = window.searchAHood;
-    map.fire('click', { latlng: L.latLng(52.4986, 13.418), originalEvent: new MouseEvent('click') });
+    map.fire('contextmenu', { latlng: L.latLng(52.4986, 13.418), originalEvent: new MouseEvent('click') });
   });
   await click('[data-act="transit-iso"]');
   await waitStatus(/Haltestellen in|fehlgeschlagen/, 120_000);
@@ -214,7 +243,7 @@ await step('Preset „Ruhig & grün“ mit Grünanteil', async () => {
   await waitStatus(/Zellen|fehlgeschlagen/);
   await page.evaluate(() => {
     const { map } = window.searchAHood;
-    map.fire('click', { latlng: L.latLng(52.4985, 13.4128), originalEvent: new MouseEvent('click') });
+    map.fire('contextmenu', { latlng: L.latLng(52.4985, 13.4128), originalEvent: new MouseEvent('click') });
   });
   await page.waitForSelector('.leaflet-popup-content .score');
   const row = await page.$$eval('.leaflet-popup-content tr', (trs) => trs.find((t) => /Grünanteil/.test(t.textContent))?.textContent.replace(/\s+/g, ' ').trim());

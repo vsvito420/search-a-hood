@@ -1,4 +1,4 @@
-import { esc, fmtValue, safeUrl } from './popups.js';
+import { esc, fmtValue, safeUrl, modLabel } from './popups.js';
 import { pricePerSqm } from '../core/candidates.js';
 import { scoreColor } from '../core/scoring.js';
 
@@ -35,7 +35,7 @@ export function renderCandidateTable(root, rows, { sortKey, sortDir, onSort, onF
     ['score', 'Score'],
     ['rent', '€'],
     ['sqm', '€/m²'],
-    ...activeModules.map((m) => [`m:${m.id}`, m.name]),
+    ...activeModules.map((m) => [`m:${m.id}`, modLabel(m)]),
   ];
   const arrow = (k) => (k === sortKey ? (sortDir > 0 ? ' ▲' : ' ▼') : '');
   const cells = (r) => {

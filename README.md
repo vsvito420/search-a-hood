@@ -63,7 +63,8 @@ npm test             # Unit-Tests (node:test)
 1. Auf ein Viertel zoomen (max. ca. 60 km², für Fußwege max. ca. 30 km²)
 2. Ein Preset wählen oder die Module einzeln einstellen
 3. **A** drücken oder „Sichtbares Gebiet analysieren“ klicken
-4. Die Karte anklicken, um den Standort-Report zu sehen. „📄 Steckbrief“ öffnet die druckbare Version.
+4. Die Karte bewegst du frei, ein Klick öffnet nichts. Den **Standort-Report** öffnest du mit **Rechtsklick** oder **langem Tippen**, oder im 🎯-**Prüfmodus** (Taste <kbd>P</kbd>) mit einem normalen Klick. „📄 Steckbrief“ öffnet die druckbare Version.
+5. Für mehr Kartenfläche klappst du die Seitenleiste mit dem Panel-Symbol oder <kbd>B</kbd> ein.
 
 Grün heißt, die Lage passt. Rot heißt, sie passt nicht. Grau heißt, ein Pflichtkriterium ist verletzt.
 
@@ -88,6 +89,9 @@ index.html?at=52.4986,13.418&z=16&walk=1&time=2026-10-02T23:00&run=1
 | <kbd>I</kbd> | Isochrone am letzten Klickpunkt |
 | <kbd>T</kbd> / <kbd>Leertaste</kbd> | Wochen-Zeitraffer öffnen / abspielen |
 | <kbd>R</kbd> | Relative Farbskala |
+| <kbd>P</kbd> | Prüfmodus: Klick auf die Karte öffnet den Report |
+| Rechtsklick / lange tippen | Standort-Report (immer) |
+| <kbd>B</kbd> | Seitenleiste ein-/ausklappen |
 | <kbd>/</kbd> | Adresssuche |
 | <kbd>1</kbd>–<kbd>4</kbd> | Tabs |
 | <kbd>Shift</kbd>+Klick | Kandidat an dieser Stelle anlegen |

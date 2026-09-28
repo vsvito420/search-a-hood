@@ -6,7 +6,7 @@ const cli = (...args) => spawnSync(process.execPath, ['bin/search-a-hood.mjs', .
 
 test('CLI: help, modules, presets', () => {
   assert.match(cli('--help').stdout, /score <adresse\|lat,lon>/);
-  assert.match(cli('modules').stdout, /bubatz\s+Bubatz-Zone/);
+  assert.match(cli('modules').stdout, /bubatz\s+🥦 Bubatz-Zone/);
   assert.match(cli('presets').stdout, /informatiker/);
 });
 

@@ -25,7 +25,7 @@
     <header>
       <div class="row between">
         <h1>search-a-hood</h1>
-        <button id="palette-btn" class="kbd-btn" type="button" title="Befehlspalette">⌘K</button>
+        <button id="palette-btn" class="icon-btn" type="button" title="Befehlspalette (Ctrl/⌘+K)" aria-label="Befehlspalette"><i data-icon="command"></i></button>
       </div>
       <p class="sub">Wo wohnen, ohne sich Sorgen zu machen, ob der Laden noch auf hat?</p>
     </header>
@@ -36,10 +36,10 @@
     </form>
 
     <nav class="tabs" role="tablist">
-      <button role="tab" data-tab="criteria" aria-selected="true">Kriterien</button>
-      <button role="tab" data-tab="candidates">Wohnungen <span id="cand-count" class="badge"></span></button>
-      <button role="tab" data-tab="layers">Layer</button>
-      <button role="tab" data-tab="dev">Dev</button>
+      <button role="tab" data-tab="criteria" aria-selected="true" title="Kriterien (1)" aria-label="Kriterien"><i data-icon="sliders" data-size="20"></i></button>
+      <button role="tab" data-tab="candidates" title="Wohnungen vergleichen (2)" aria-label="Wohnungen"><i data-icon="home" data-size="20"></i><span id="cand-count" class="badge"></span></button>
+      <button role="tab" data-tab="layers" title="Karten-Layer (3)" aria-label="Layer"><i data-icon="layers" data-size="20"></i></button>
+      <button role="tab" data-tab="dev" title="Teilen, Export & Entwickler (4)" aria-label="Dev"><i data-icon="code" data-size="20"></i></button>
     </nav>
 
     <!-- ============ Kriterien ============ -->
@@ -62,20 +62,20 @@
           <button type="button" data-time="sun11">So 11 Uhr</button>
           <button type="button" data-time="night3">3 Uhr nachts</button>
         </div>
-        <p class="hint">Gilt für Module mit „nur geöffnet“. Auswertung: <span id="hours-engine"></span>.</p>
+        <p class="hint" title="Öffnungszeiten-Auswertung">🕒 für Module mit „nur geöffnet“ · <span id="hours-engine"></span></p>
       </section>
 
       <section>
-        <h2>Entfernung messen als</h2>
+        <h2>Entfernung</h2>
         <div class="seg" id="dist-mode">
-          <button type="button" data-mode="air" aria-pressed="true">Luftlinie</button>
-          <button type="button" data-mode="walk" aria-pressed="false">🚶 echte Fußwege</button>
+          <button type="button" data-mode="air" aria-pressed="true" title="Luftlinie – schnell">📏 Luftlinie</button>
+          <button type="button" data-mode="walk" aria-pressed="false" title="Echte Fußwege: lädt das Wegenetz und rechnet mit Dijkstra – Flüsse, Bahntrassen und Autobahnen ohne Übergang zählen als Umweg (W)">🚶 Fußwege</button>
         </div>
-        <p class="hint">„Fußwege“ lädt das Wegenetz und rechnet mit Dijkstra – Flüsse, Bahntrassen und Autobahnen ohne Übergang zählen dann wirklich als Umweg.</p>
       </section>
 
       <section>
-        <h2>📍 Meine Ziele · Pendeln</h2>
+        <details id="targets-box">
+        <summary>🎯 Meine Ziele · Pendeln</summary>
         <form id="target-form" class="stack">
           <div class="row">
             <input name="name" placeholder="Name, z. B. Arbeit" required class="grow" />
@@ -93,7 +93,8 @@
             <button type="submit">Hinzufügen</button>
           </div>
         </form>
-        <p class="hint">Echte Reisezeit von jeder Lage zum Ziel. Rad, Fuß und Auto rechnet FOSSGIS-OSRM, den ÖPNV Transitous mit Ankunft am nächsten Werktag. Ziele erscheinen als Module unter „Meine Ziele“.</p>
+        <p class="hint">Echte Reisezeit von jeder Lage zum Ziel (Rad/Fuß/Auto: FOSSGIS-OSRM, ÖPNV: Transitous, Ankunft nächster Werktag). Ziele erscheinen als Module unter „Meine Ziele“.</p>
+        </details>
       </section>
 
       <section>
@@ -211,6 +212,9 @@
           <tr><td><kbd>W</kbd></td><td>Luftlinie ↔ Fußwege</td></tr>
           <tr><td><kbd>I</kbd></td><td>Isochrone am letzten Klickpunkt</td></tr>
           <tr><td><kbd>R</kbd></td><td>Relative Farbskala</td></tr>
+          <tr><td><kbd>P</kbd></td><td>Prüfmodus: Klick auf Karte → Report</td></tr>
+          <tr><td>Rechtsklick / lange tippen</td><td>Standort-Report (immer)</td></tr>
+          <tr><td><kbd>B</kbd></td><td>Seitenleiste ein-/ausklappen</td></tr>
           <tr><td><kbd>T</kbd></td><td>Wochen-Zeitraffer (Leertaste = Play)</td></tr>
           <tr><td><kbd>H</kbd></td><td>Standort-Check „Hier“ (GPS)</td></tr>
           <tr><td>◉ am Modul</td><td>Heatmap nur für dieses Kriterium</td></tr>
@@ -234,12 +238,18 @@
   <main id="map-wrap">
     <div id="map"></div>
     <div id="toolbar">
-      <button id="analyze-btn" class="primary" type="button">🔍 <span class="long">Sichtbares Gebiet </span>analysieren</button>
-      <label class="opacity"><span class="long">Heatmap </span><input id="opacity" type="range" min="0" max="1" step="0.05" value="0.55" />
-        <span title="Farbskala auf den sichtbaren Bereich strecken (R)"><input id="relative" type="checkbox" /> relativ</span></label>
-      <button id="iso-btn" type="button" title="Isochrone: 5/10/15 min zu Fuß vom letzten Klickpunkt">⏱<span class="long"> Isochrone</span></button>
-      <button id="timeline-btn" type="button" title="Zeitraffer durch die Woche (T)">📅<span class="long"> Woche</span></button>
-      <button id="here-btn" type="button" title="Standort-Check für deine aktuelle Position – z. B. bei der Besichtigung (H)">📍<span class="long"> Hier</span></button>
+      <div class="tb-group">
+        <button id="sidebar-btn" class="icon-btn" type="button" title="Seitenleiste ein-/ausklappen (B)" aria-label="Seitenleiste ein-/ausklappen" aria-pressed="false"><i data-icon="panel"></i></button>
+      </div>
+      <button id="analyze-btn" class="primary icon-btn wide" type="button" title="Sichtbares Gebiet analysieren (A)" aria-label="Sichtbares Gebiet analysieren"><i data-icon="search" data-size="20"></i></button>
+      <div class="tb-group">
+        <button id="inspect-btn" class="icon-btn" type="button" title="Prüfmodus: Klick auf die Karte öffnet den Standort-Report (P) – alternativ Rechtsklick / lange tippen" aria-label="Prüfmodus" aria-pressed="false"><i data-icon="crosshair"></i></button>
+        <button id="iso-btn" class="icon-btn" type="button" title="Isochrone: 5/10/15 min zu Fuß vom zuletzt geprüften Punkt (I)" aria-label="Isochrone"><i data-icon="timer"></i></button>
+        <button id="timeline-btn" class="icon-btn" type="button" title="Zeitraffer durch die Woche (T)" aria-label="Wochen-Zeitraffer"><i data-icon="calendar"></i></button>
+        <button id="here-btn" class="icon-btn" type="button" title="Standort-Check an deiner Position, z. B. bei der Besichtigung (H)" aria-label="Hier prüfen"><i data-icon="locate"></i></button>
+      </div>
+      <label class="opacity tb-group" title="Deckkraft der Heatmap"><i data-icon="flame"></i><input id="opacity" type="range" min="0" max="1" step="0.05" value="0.55" aria-label="Deckkraft der Heatmap" />
+        <span class="rel" title="Relative Farbskala: schlechteste sichtbare Lage = rot, beste = grün (R)"><input id="relative" type="checkbox" aria-label="Relative Farbskala" /><i data-icon="contrast" data-size="16"></i></span></label>
     </div>
     <div id="timeline" hidden>
       <button id="tl-play" type="button" aria-label="Abspielen">▶</button>
@@ -257,7 +267,7 @@
         <li>Auf dein Wunsch-Viertel zoomen (oder <kbd>/</kbd> Adresse suchen)</li>
         <li>Links ein <b>Preset</b> wählen – z. B. 🧑‍💻 Informatiker – oder Module einstellen</li>
         <li><b>🔍 analysieren</b> (<kbd>A</kbd>): grün = passt, grau = Pflicht verletzt</li>
-        <li>Karte anklicken → Report, Isochrone, Steckbrief</li>
+        <li>Die Karte bewegst du frei. Den <b>Report</b> öffnest du mit Rechtsklick oder langem Tippen, oder mit dem 🎯-Prüfmodus (<kbd>P</kbd>)</li>
       </ol>
       <p class="hint">Wohnungen vergleichen: Tab „Wohnungen“. Arbeit/Uni: „Meine Ziele“. Alles andere: <kbd>Ctrl</kbd>+<kbd>K</kbd>.</p>
       <button id="welcome-close" type="button" class="primary">Los geht's</button>
@@ -266,7 +276,7 @@
       <div class="row between"><h3>Top-Lagen</h3><button id="results-close" class="link" type="button" aria-label="schließen">✕</button></div>
       <ol id="top-list"></ol>
       <div class="legend"><span id="legend-lo">0 %</span><i></i><span id="legend-hi">100 %</span></div>
-      <p class="hint">Grau = Pflichtkriterium verletzt. Klick auf die Karte → Standort-Report.</p>
+      <p class="hint">Grau = Pflichtkriterium verletzt. Rechtsklick, lange tippen oder 🎯-Modus → Standort-Report.</p>
     </div>
   </main>
 
