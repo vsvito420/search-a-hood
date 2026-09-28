@@ -56,8 +56,26 @@ export function createGeocoder({ fetchImpl = globalThis.fetch, cache = new Map()
     cache.set(key, r);
     return r;
   };
+  /** Rückwärts: Koordinate → kurze Adresse (gleiche Drossel und gleicher Cache wie die Suche). */
+  const reverse = async (lat, lon) => {
+    const key = `@${lat.toFixed(5)},${lon.toFixed(5)}`;
+    if (cache.has(key)) return cache.get(key);
+    const wait = Math.max(0, last + minInterval - Date.now());
+    if (wait) await new Promise((r) => setTimeout(r, wait));
+    last = Date.now();
+    const res = await fetchImpl(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&lat=${lat}&lon=${lon}`, {
+      headers: { 'Accept-Language': 'de' },
+    });
+    if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
+    const hit = await res.json();
+    const r = hit && !hit.error ? shortAddress(hit) : null;
+    cache.set(key, r);
+    return r;
+  };
   // Serialisieren, damit das Intervall auch bei parallelen Aufrufen gilt
-  return (q) => (chain = chain.then(() => geocode(q), () => geocode(q)));
+  const fn = (q) => (chain = chain.then(() => geocode(q), () => geocode(q)));
+  fn.reverse = (lat, lon) => (chain = chain.then(() => reverse(lat, lon), () => reverse(lat, lon)));
+  return fn;
 }
 
 export const pricePerSqm = (c) => (c.rent && c.size ? c.rent / c.size : null);

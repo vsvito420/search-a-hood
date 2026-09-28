@@ -14,7 +14,7 @@ import { loadHoursLib, isOpenAt, hoursEngine } from './core/hours.js';
 import { WalkGraph, NetworkField, isochrone, buildWalkQuery, WALK_SPEED_M_PER_MIN } from './core/routing.js';
 import { parseCandidateLines, createGeocoder, toCSV, pricePerSqm } from './core/candidates.js';
 import { renderModules, renderPresets, updateCounts } from './ui/panel.js';
-import { poiPopup, reportPopup, formatDist, esc } from './ui/popups.js';
+import { poiPopup, reportPopup, formatDist, esc, summarize } from './ui/popups.js';
 import { OverlayManager } from './ui/overlays.js';
 import { renderCandidateTable, sortValue } from './ui/candidates.js';
 import { createPalette } from './ui/palette.js';
@@ -467,6 +467,7 @@ async function analyze(bbox) {
     return;
   }
   state.bbox = bbox;
+  if (!$('#welcome').hidden) ($('#welcome').hidden = true), store.set('welcomed', true);
   // Daten mit Rand laden, sonst wirken Lagen am Rand besser als sie sind (POIs knapp außerhalb fehlen).
   const pad = Math.min(1000, Math.max(200, ...dataModules().map((m) => (m.geometry === 'area' ? (m.shareRadius || 300) + 50 : searchRadius(state.settings[m.id])))));
   state.data.setArea(padBbox(bbox, pad));
@@ -692,12 +693,17 @@ function drawHeatmap({ grid, scores }) {
   areaOutline = L.rectangle(bounds, { color: '#555', weight: 1, fill: false, dashArray: '4 4', interactive: false }).addTo(map);
 }
 
+let topToken = 0;
 function drawTop(top) {
   const list = $('#top-list');
   list.innerHTML = '';
+  const token = ++topToken;
+  const items = [];
   for (const t of top) {
     const li = document.createElement('li');
     li.textContent = `${Math.round(t.score * 100)} % · ${t.lat.toFixed(4)}, ${t.lon.toFixed(4)}`;
+    li.title = summarize(evaluate(t.lat, t.lon).parts);
+    items.push([t, li]);
     li.addEventListener('click', () => {
       map.setView([t.lat, t.lon], Math.max(map.getZoom(), 16));
       showReport(L.latLng(t.lat, t.lon));
@@ -706,6 +712,14 @@ function drawTop(top) {
   }
   if (!top.length) list.innerHTML = '<li>Keine Lage erfüllt alle Pflichtkriterien.</li>';
   $('#results').hidden = false;
+  // Straßennamen erst nachladen, wenn die Liste 1,2 s stabil ist (Zeitraffer, Slider) – Nominatim max. 1/s
+  setTimeout(async () => {
+    for (const [t, li] of items) {
+      if (token !== topToken || tl.timer) return;
+      const addr = await geocode.reverse(t.lat, t.lon).catch(() => null);
+      if (token === topToken && addr) li.textContent = `${Math.round(t.score * 100)} % · ${addr.split(', ').slice(0, 2).join(', ')}`;
+    }
+  }, 1200);
 }
 
 const inBbox = (b, lat, lon) => b && lat >= b.south && lat <= b.north && lon >= b.west && lon <= b.east;
@@ -1191,6 +1205,15 @@ document.addEventListener('keydown', (e) => {
 // =====================================================================
 // Start
 // =====================================================================
+// Erste Schritte beim ersten Besuch (nicht bei Permalink/Deep-Link)
+if (!store.get('welcomed', false) && !fromLink && !location.search) {
+  $('#welcome').hidden = false;
+  $('#welcome-close').addEventListener('click', () => {
+    $('#welcome').hidden = true;
+    store.set('welcomed', true);
+  });
+}
+
 refreshPanel();
 renderCandidates();
 drawTargets();

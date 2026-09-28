@@ -101,3 +101,16 @@ test('Permalink/Config: manipulierte Daten werden verworfen statt die App zu cra
   assert.equal(dec.time, null);
   assert.deepEqual(sanitize({ customDefs: 'x', targets: null, candidates: 5 }), { customDefs: [], targets: [], candidates: [], settings: {} });
 });
+
+test('Geocoder.reverse: kurze Adresse, Cache, gemeinsame Drossel', async () => {
+  let calls = 0;
+  const fetchImpl = async (url) => {
+    calls++;
+    assert.match(url, /reverse\?format=jsonv2&zoom=18/);
+    return { ok: true, json: async () => ({ display_name: 'lang', address: { road: 'Wiener Straße', house_number: '10', suburb: 'Kreuzberg', city: 'Berlin' } }) };
+  };
+  const geo = createGeocoder({ fetchImpl, minInterval: 10 });
+  assert.equal(await geo.reverse(52.5, 13.4), 'Wiener Straße 10, Kreuzberg, Berlin');
+  await geo.reverse(52.5, 13.4);
+  assert.equal(calls, 1);
+});

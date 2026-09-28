@@ -65,7 +65,7 @@ export function renderCandidateTable(root, rows, { sortKey, sortDir, onSort, onF
     <thead><tr>${head.map(([k, l]) => `<th data-sort="${esc(k)}" title="${esc(l)}">${esc(l)}${arrow(k)}</th>`).join('')}<th></th></tr></thead>
     <tbody>${rows.map((r) => `<tr data-idx="${r.idx}">${cells(r)}</tr>`).join('')}</tbody>
   </table>
-  ${activeModules.length ? '<div class="matrix-legend"><span>Kriterium 0 %</span><i></i><span>100 %</span><span>· ✓ erfüllt · ✗ Pflicht verletzt · Spalte anklicken = sortieren</span></div>' : ''}`;
+  ${activeModules.length ? '<div class="matrix-legend"><span>Erfüllung 0 %</span><i></i><span>100 %</span><small>✓ Ziel erfüllt · ✗ Pflicht verletzt · · verfehlt · Spaltenkopf = sortieren</small></div>' : ''}`;
   root.querySelectorAll('th[data-sort]').forEach((th) => th.addEventListener('click', () => onSort(th.dataset.sort)));
   root.querySelectorAll('tr[data-idx]').forEach((tr) =>
     tr.addEventListener('click', (e) => {

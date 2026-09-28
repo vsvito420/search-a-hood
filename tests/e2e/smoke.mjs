@@ -60,6 +60,7 @@ const snap = async (name) => shot && (await page.waitForTimeout(1200), await pag
 await page.goto(BASE, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.searchAHood);
 await page.evaluate(() => window.searchAHood.map.setView([52.4986, 13.418], 16));
+if (await page.isVisible('#welcome')) await click('#welcome-close');
 
 await step('Preset Informatiker', () => click('text=Informatiker'));
 await step('Analyse (Luftlinie)', async () => {

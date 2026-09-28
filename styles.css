@@ -306,6 +306,17 @@ pre.fi { font: 10px/1.3 ui-monospace, monospace; max-height: 140px; overflow: au
 /* Score-Matrix in der Vergleichstabelle */
 table.cmp td.cell { background: var(--bg-l); color: var(--fg-l); text-align: right; font-variant-numeric: tabular-nums; border-bottom: 2px solid var(--panel); border-left: 2px solid var(--panel); }
 @media (prefers-color-scheme: dark) { table.cmp td.cell { background: var(--bg-d); color: var(--fg-d); } }
-.matrix-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin-top: 6px; }
-.matrix-legend i { flex: 0 0 120px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #cde2fb, #6da7ec, #1c5cab); }
+.matrix-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 11px; color: var(--muted); margin-top: 8px; }
+.matrix-legend small { flex-basis: 100%; }
+.matrix-legend i { flex: 0 0 100px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #cde2fb, #6da7ec, #1c5cab); }
 @media (prefers-color-scheme: dark) { .matrix-legend i { background: linear-gradient(90deg, #0d366b, #2a78d6, #86b6ef); } }
+
+#welcome {
+  position: absolute; z-index: 1100; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(420px, calc(100% - 32px)); background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow);
+}
+#welcome[hidden] { display: none; }
+#welcome h3 { font-size: 17px; margin-bottom: 8px; }
+#welcome ol { margin: 0 0 8px; padding-left: 20px; line-height: 1.7; }
+#welcome button { margin-top: 8px; width: 100%; }
