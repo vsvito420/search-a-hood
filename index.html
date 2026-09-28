@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>search-a-hood</title>
+  <meta name="description" content="Modulares OSINT-Tool: Finde Wohnlagen, die zu dir passen – auf Basis von OpenStreetMap." />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <!-- Leaflet mit Integritätsprüfung (SRI); fällt jsdelivr aus, springt unpkg ein -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""
+        onerror="this.onerror=null;this.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#1a7f4b" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    window.L || document.write('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""><\/script>');
+  </script>
+</head>
+<body>
+  <aside id="sidebar">
+    <header>
+      <div class="row between">
+        <h1>search-a-hood</h1>
+        <button id="palette-btn" class="kbd-btn" type="button" title="Befehlspalette">⌘K</button>
+      </div>
+      <p class="sub">Wo wohnen, ohne sich Sorgen zu machen, ob der Laden noch auf hat?</p>
+    </header>
+
+    <form id="search-form" class="row">
+      <input id="search-input" type="search" placeholder="Adresse oder Stadtteil suchen…  ( / )" autocomplete="off" />
+      <button type="submit">Suchen</button>
+    </form>
+
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="criteria" aria-selected="true">Kriterien</button>
+      <button role="tab" data-tab="candidates">Wohnungen <span id="cand-count" class="badge"></span></button>
+      <button role="tab" data-tab="layers">Layer</button>
+      <button role="tab" data-tab="dev">Dev</button>
+    </nav>
+
+    <!-- ============ Kriterien ============ -->
+    <div class="tab-panel" data-panel="criteria">
+      <section>
+        <h2>Presets</h2>
+        <div id="presets" class="chips"></div>
+      </section>
+
+      <section>
+        <h2>Zeitpunkt</h2>
+        <label class="row">
+          <span>Öffnungszeiten prüfen für</span>
+          <input id="time-input" type="datetime-local" />
+        </label>
+        <div class="chips small" id="time-chips">
+          <button type="button" data-time="now">jetzt</button>
+          <button type="button" data-time="fri23">Fr 23 Uhr</button>
+          <button type="button" data-time="sat22">Sa 22 Uhr</button>
+          <button type="button" data-time="sun11">So 11 Uhr</button>
+          <button type="button" data-time="night3">3 Uhr nachts</button>
+        </div>
+        <p class="hint">Gilt für Module mit „nur geöffnet“. Auswertung: <span id="hours-engine"></span>.</p>
+      </section>
+
+      <section>
+        <h2>Entfernung messen als</h2>
+        <div class="seg" id="dist-mode">
+          <button type="button" data-mode="air" aria-pressed="true">Luftlinie</button>
+          <button type="button" data-mode="walk" aria-pressed="false">🚶 echte Fußwege</button>
+        </div>
+        <p class="hint">„Fußwege“ lädt das Wegenetz und rechnet mit Dijkstra – Flüsse, Bahntrassen und Autobahnen ohne Übergang zählen dann wirklich als Umweg.</p>
+      </section>
+
+      <section>
+        <h2>📍 Meine Ziele · Pendeln</h2>
+        <form id="target-form" class="stack">
+          <div class="row">
+            <input name="name" placeholder="Name, z. B. Arbeit" required class="grow" />
+            <select name="mode" aria-label="Verkehrsmittel">
+              <option value="bike">🚲 Rad</option>
+              <option value="transit">🚆 ÖPNV</option>
+              <option value="foot">🚶 Fuß</option>
+              <option value="car">🚗 Auto</option>
+            </select>
+          </div>
+          <input name="addr" placeholder="Adresse oder lat,lon" required />
+          <div class="row">
+            <label>max. <input name="minutes" type="number" min="1" max="120" value="25" class="tiny" /> min</label>
+            <label title="Ankunftszeit (nur ÖPNV), nächster Werktag">Ankunft <input name="arrive" type="time" value="08:30" /></label>
+            <button type="submit">Hinzufügen</button>
+          </div>
+        </form>
+        <p class="hint">Echte Reisezeit von jeder Lage zum Ziel. Rad, Fuß und Auto rechnet FOSSGIS-OSRM, den ÖPNV Transitous mit Ankunft am nächsten Werktag. Ziele erscheinen als Module unter „Meine Ziele“.</p>
+      </section>
+
+      <section>
+        <div class="row between">
+          <h2>Module</h2>
+          <span>
+            <input id="module-filter" type="search" placeholder="filtern…" class="mini" />
+            <button id="reset-btn" class="link" type="button">zurücksetzen</button>
+          </span>
+        </div>
+        <div id="modules"></div>
+      </section>
+
+      <section>
+        <details id="custom">
+          <summary>➕ Eigenes Modul</summary>
+          <form id="custom-form" class="stack">
+            <input name="name" placeholder="Name, z. B. Dönerladen" required />
+            <input name="query" placeholder='Overpass-Filter, z. B. [cuisine~"kebab"]' required />
+            <p class="hint">Syntax wie Overpass QL: <code>[key]</code> <code>[key=value]</code> <code>[key!=v]</code> <code>[key~"regex"]</code>, mehrere mit <code>;</code> trennen (ODER). Tags: <a href="https://wiki.openstreetmap.org/wiki/DE:Map_Features" target="_blank" rel="noopener">OSM Map Features</a>.</p>
+            <div class="row">
+              <label><input name="hours" type="checkbox" /> hat Öffnungszeiten</label>
+              <label><input name="line" type="checkbox" /> ist Linie (Straße/Fluss)</label>
+              <input name="color" type="color" value="#34495e" />
+            </div>
+            <button type="submit">Modul hinzufügen</button>
+          </form>
+        </details>
+      </section>
+    </div>
+
+    <!-- ============ Wohnungen ============ -->
+    <div class="tab-panel" data-panel="candidates" hidden>
+      <section>
+        <h2>Wohnungs-Kandidaten</h2>
+        <p class="hint">Adressen aus Inseraten einfügen – eine pro Zeile. Optional mit <code>|</code> getrennt: <code>Adresse | Kaltmiete € | m² | Link</code>. Oder <kbd>Shift</kbd>+Klick auf die Karte.</p>
+        <textarea id="cand-input" rows="4" placeholder="Wiener Str. 10, Berlin | 1150 | 62 | https://…&#10;Oranienstr. 185, 10999 Berlin"></textarea>
+        <div class="row">
+          <button id="cand-add" type="button" class="primary">Hinzufügen & geocodieren</button>
+          <button id="cand-fit" type="button">Gebiet um Kandidaten analysieren</button>
+        </div>
+        <div class="row">
+          <button id="cand-score" type="button" title="Jede Wohnung einzeln bewerten – funktioniert auch, wenn sie über die ganze Stadt verteilt sind (ohne Heatmap)">⚖ Alle einzeln bewerten</button>
+        </div>
+      </section>
+      <section>
+        <div id="cand-table" class="table-wrap"></div>
+      </section>
+    </div>
+
+    <!-- ============ Layer ============ -->
+    <div class="tab-panel" data-panel="layers" hidden>
+      <section>
+        <h2>Overlays (WMS / Kacheln)</h2>
+        <p class="hint">Behördliche Geodaten über die Karte legen. Aktive WMS-Layer werden beim Klick auf die Karte am Punkt abgefragt (GetFeatureInfo).</p>
+        <div id="overlays"></div>
+      </section>
+      <section>
+        <details>
+          <summary>➕ Eigener WMS / XYZ</summary>
+          <form id="overlay-form" class="stack">
+            <input name="name" placeholder="Name, z. B. Lärmkarte Berlin" required />
+            <input name="url" placeholder="WMS-Basis-URL oder XYZ mit {z}/{x}/{y}" required />
+            <input name="layers" placeholder="WMS-Layer (optional, sonst später abrufen)" />
+            <p class="hint">Lärmkarten, Hochwasser, Bodenrichtwerte usw. gibt es als WMS von den Geoportalen der Länder.</p>
+            <button type="submit">Overlay hinzufügen</button>
+          </form>
+        </details>
+      </section>
+    </div>
+
+    <!-- ============ Dev ============ -->
+    <div class="tab-panel" data-panel="dev" hidden>
+      <section>
+        <h2>Teilen & Konfiguration</h2>
+        <div class="row wrap">
+          <button id="permalink-btn" type="button">🔗 Permalink kopieren</button>
+          <button id="config-export" type="button">⬇ Config (JSON)</button>
+          <label class="button">⬆ Config laden<input id="config-import" type="file" accept="application/json" hidden /></label>
+        </div>
+      </section>
+      <section>
+        <h2>Deep-Links</h2>
+        <p class="hint">Die App lässt sich per URL steuern, z. B. aus einer Tabelle mit Inseraten:</p>
+        <pre class="code">?addr=Oranienstraße 185, Berlin&amp;preset=informatiker&amp;run=1
+?at=52.4986,13.418&amp;z=16&amp;walk=1&amp;time=2026-10-02T23:00&amp;run=1</pre>
+        <p class="hint"><code>addr</code> oder <code>at</code>, <code>z</code> Zoom, <code>preset</code>, <code>walk=1</code>, <code>time</code>, <code>run=1</code> analysiert sofort und öffnet den Report.</p>
+      </section>
+      <section>
+        <h2>Export</h2>
+        <div class="row wrap">
+          <button id="export-geojson" type="button">Heatmap-Zellen (GeoJSON)</button>
+          <button id="export-pois" type="button">POIs (GeoJSON)</button>
+          <button id="export-cand" type="button">Kandidaten (CSV)</button>
+        </div>
+      </section>
+      <section>
+        <h2>Overpass-Instanz</h2>
+        <input id="overpass-url" type="url" placeholder="Standard: overpass-api.de → private.coffee → mail.ru" />
+        <p class="hint">Eigene Instanz (z. B. <code>http://localhost:12345/api/interpreter</code>) für große Gebiete ohne Fair-Use-Limit.</p>
+        <p class="hint">Antworten werden 24 h im Browser gecacht (IndexedDB). <button id="cache-clear" type="button" class="link">Cache leeren</button></p>
+      </section>
+      <section>
+        <h2>Overpass-Abfrage</h2>
+        <p class="hint">Die kombinierte Abfrage der letzten Analyse – direkt in <a href="https://overpass-turbo.eu" target="_blank" rel="noopener">overpass-turbo</a> testbar.</p>
+        <pre id="last-query" class="code">–</pre>
+        <button id="copy-query" type="button">Kopieren</button>
+      </section>
+      <section>
+        <h2>Tastenkürzel</h2>
+        <table class="keys">
+          <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd></td><td>Befehlspalette</td></tr>
+          <tr><td><kbd>A</kbd></td><td>Sichtbares Gebiet analysieren</td></tr>
+          <tr><td><kbd>/</kbd></td><td>Adresssuche</td></tr>
+          <tr><td><kbd>W</kbd></td><td>Luftlinie ↔ Fußwege</td></tr>
+          <tr><td><kbd>I</kbd></td><td>Isochrone am letzten Klickpunkt</td></tr>
+          <tr><td><kbd>R</kbd></td><td>Relative Farbskala</td></tr>
+          <tr><td><kbd>T</kbd></td><td>Wochen-Zeitraffer (Leertaste = Play)</td></tr>
+          <tr><td><kbd>H</kbd></td><td>Standort-Check „Hier“ (GPS)</td></tr>
+          <tr><td>◉ am Modul</td><td>Heatmap nur für dieses Kriterium</td></tr>
+          <tr><td><kbd>Shift</kbd>+Klick</td><td>Kandidat an Position anlegen</td></tr>
+          <tr><td><kbd>1</kbd>–<kbd>4</kbd></td><td>Tabs wechseln</td></tr>
+        </table>
+      </section>
+      <section>
+        <h2>Konsole</h2>
+        <p class="hint"><code>searchAHood</code> ist im DevTools-Kontext verfügbar: <code>state</code>, <code>map</code>, <code>evaluate(lat, lon)</code>, <code>modules</code>.</p>
+      </section>
+    </div>
+
+    <footer>
+      <span id="data-age"></span><br>
+      Daten © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>-Mitwirkende (ODbL) via Overpass API · Geocoding: Nominatim.
+      Keine Rechtsberatung. <a href="https://github.com/vsvito420/search-a-hood" target="_blank" rel="noopener">Quellcode</a>
+    </footer>
+  </aside>
+
+  <main id="map-wrap">
+    <div id="map"></div>
+    <div id="toolbar">
+      <button id="analyze-btn" class="primary" type="button">🔍 <span class="long">Sichtbares Gebiet </span>analysieren</button>
+      <label class="opacity"><span class="long">Heatmap </span><input id="opacity" type="range" min="0" max="1" step="0.05" value="0.55" />
+        <span title="Farbskala auf den sichtbaren Bereich strecken (R)"><input id="relative" type="checkbox" /> relativ</span></label>
+      <button id="iso-btn" type="button" title="Isochrone: 5/10/15 min zu Fuß vom letzten Klickpunkt">⏱<span class="long"> Isochrone</span></button>
+      <button id="timeline-btn" type="button" title="Zeitraffer durch die Woche (T)">📅<span class="long"> Woche</span></button>
+      <button id="here-btn" type="button" title="Standort-Check für deine aktuelle Position – z. B. bei der Besichtigung (H)">📍<span class="long"> Hier</span></button>
+    </div>
+    <div id="timeline" hidden>
+      <button id="tl-play" type="button" aria-label="Abspielen">▶</button>
+      <div class="tl-track">
+        <input id="tl-range" type="range" min="0" max="167" step="1" value="0" aria-label="Zeitpunkt in der Woche" />
+        <div class="tl-days"><span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span></div>
+      </div>
+      <output id="tl-label">Mo 00:00</output>
+      <button id="tl-close" type="button" class="link" aria-label="schließen">✕</button>
+    </div>
+    <div id="status" role="status" aria-live="polite"></div>
+    <div id="welcome" hidden>
+      <h3>So geht's</h3>
+      <ol>
+        <li>Auf dein Wunsch-Viertel zoomen (oder <kbd>/</kbd> Adresse suchen)</li>
+        <li>Links ein <b>Preset</b> wählen – z. B. 🧑‍💻 Informatiker – oder Module einstellen</li>
+        <li><b>🔍 analysieren</b> (<kbd>A</kbd>): grün = passt, grau = Pflicht verletzt</li>
+        <li>Karte anklicken → Report, Isochrone, Steckbrief</li>
+      </ol>
+      <p class="hint">Wohnungen vergleichen: Tab „Wohnungen“. Arbeit/Uni: „Meine Ziele“. Alles andere: <kbd>Ctrl</kbd>+<kbd>K</kbd>.</p>
+      <button id="welcome-close" type="button" class="primary">Los geht's</button>
+    </div>
+    <div id="results" hidden>
+      <div class="row between"><h3>Top-Lagen</h3><button id="results-close" class="link" type="button" aria-label="schließen">✕</button></div>
+      <ol id="top-list"></ol>
+      <div class="legend"><span id="legend-lo">0 %</span><i></i><span id="legend-hi">100 %</span></div>
+      <p class="hint">Grau = Pflichtkriterium verletzt. Klick auf die Karte → Standort-Report.</p>
+    </div>
+  </main>
+
+  <div id="palette" hidden>
+    <div class="palette-box" role="dialog" aria-label="Befehlspalette">
+      <input id="palette-input" placeholder="Befehl, Modul, Preset oder Kandidat…" autocomplete="off" />
+      <ul id="palette-list"></ul>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

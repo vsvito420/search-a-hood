@@ -1,0 +1,136 @@
+import { metersPerDegree } from './geo.js';
+
+const RAD = Math.PI / 180;
+const M_PER_DEG = 111_194.9; // Erdradius (6371 km) × π/180 – identisch zur Haversine-Basis
+
+/**
+ * Schnelle Distanz für kurze Strecken (Equirectangular mit cos der Abfragebreite).
+ * Abweichung zu Haversine < 0,01 % bis ~5 km – hier der Flaschenhals, daher ohne trig pro Punkt.
+ */
+function fastDist(lat, lon, cosLat, lat2, lon2) {
+  const dy = (lat2 - lat) * M_PER_DEG;
+  const dx = (lon2 - lon) * M_PER_DEG * cosLat;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/**
+ * Einfacher Hash-Grid-Index für Nächster-Nachbar-Abfragen.
+ * Reicht für einige zehntausend Punkte auf Stadtteil-/Stadtebene völlig aus.
+ */
+export class SpatialIndex {
+  /**
+   * @param {{lat:number, lon:number}[]} items
+   * @param {number} bucketMeters Kantenlänge eines Buckets
+   */
+  constructor(items, bucketMeters = 200) {
+    this.items = items;
+    this.bucket = bucketMeters;
+    const refLat = items.length ? items.reduce((s, p) => s + p.lat, 0) / items.length : 50;
+    this.m = metersPerDegree(refLat);
+    this.cells = new Map();
+    for (const it of items) {
+      const k = this.#key(...this.#cell(it.lat, it.lon));
+      let arr = this.cells.get(k);
+      if (!arr) this.cells.set(k, (arr = []));
+      arr.push(it);
+    }
+  }
+
+  get size() {
+    return this.items.length;
+  }
+
+  #cell(lat, lon) {
+    return [Math.floor((lon * this.m.lon) / this.bucket), Math.floor((lat * this.m.lat) / this.bucket)];
+  }
+
+  // Numerischer Schlüssel statt "x:y"-String: keine String-Allokation pro Bucket-Lookup (Hot Path)
+  #key(x, y) {
+    return (x + 1_048_576) * 2_097_152 + (y + 1_048_576);
+  }
+
+  /**
+   * Nächster Punkt innerhalb von `maxDist` Metern.
+   * @returns {{item: any, dist: number} | null}
+   */
+  nearest(lat, lon, maxDist = 5000) {
+    if (!this.items.length) return null;
+    const cosLat = Math.cos(lat * RAD);
+    const [cx, cy] = this.#cell(lat, lon);
+    const maxRing = Math.ceil(maxDist / this.bucket) + 1;
+    let best = null;
+    let bestD = Infinity;
+    for (let r = 0; r <= maxRing; r++) {
+      // Ring r absuchen
+      for (let x = cx - r; x <= cx + r; x++) {
+        for (let y = cy - r; y <= cy + r; y++) {
+          if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) !== r) continue;
+          const arr = this.cells.get(this.#key(x, y));
+          if (!arr) continue;
+          for (const it of arr) {
+            const d = fastDist(lat, lon, cosLat, it.lat, it.lon);
+            if (d < bestD) {
+              bestD = d;
+              best = it;
+            }
+          }
+        }
+      }
+      // Alles außerhalb von Ring r ist mindestens (r * bucket) entfernt.
+      if (best && bestD <= r * this.bucket) break;
+    }
+    return best && bestD <= maxDist ? { item: best, dist: bestD } : null;
+  }
+
+  /**
+   * k-nächster Punkt ("mindestens k Supermärkte in X m" ⇔ k-nächster ≤ X m).
+   * @returns {{item: any, dist: number} | null}
+   */
+  kNearest(lat, lon, k, maxDist = 5000) {
+    if (k <= 1) return this.nearest(lat, lon, maxDist);
+    if (this.items.length < k) return null;
+    const cosLat = Math.cos(lat * RAD);
+    const [cx, cy] = this.#cell(lat, lon);
+    const maxRing = Math.ceil(maxDist / this.bucket) + 1;
+    const best = []; // sortiert, Länge ≤ k: {item, dist}
+    for (let r = 0; r <= maxRing; r++) {
+      for (let x = cx - r; x <= cx + r; x++) {
+        for (let y = cy - r; y <= cy + r; y++) {
+          if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) !== r) continue;
+          const arr = this.cells.get(this.#key(x, y));
+          if (!arr) continue;
+          for (const it of arr) {
+            const d = fastDist(lat, lon, cosLat, it.lat, it.lon);
+            if (best.length === k && d >= best[k - 1].dist) continue;
+            let i = best.length;
+            while (i > 0 && best[i - 1].dist > d) i--;
+            best.splice(i, 0, { item: it, dist: d });
+            if (best.length > k) best.pop();
+          }
+        }
+      }
+      if (best.length === k && best[k - 1].dist <= r * this.bucket) break;
+    }
+    const hit = best.length === k ? best[k - 1] : null;
+    return hit && hit.dist <= maxDist ? hit : null;
+  }
+
+  /** Alle Punkte im Umkreis (für Zählungen wie "3 Supermärkte in 500 m"). */
+  within(lat, lon, radius) {
+    const cosLat = Math.cos(lat * RAD);
+    const [cx, cy] = this.#cell(lat, lon);
+    const r = Math.ceil(radius / this.bucket);
+    const out = [];
+    for (let x = cx - r; x <= cx + r; x++) {
+      for (let y = cy - r; y <= cy + r; y++) {
+        const arr = this.cells.get(this.#key(x, y));
+        if (!arr) continue;
+        for (const it of arr) {
+          const d = fastDist(lat, lon, cosLat, it.lat, it.lon);
+          if (d <= radius) out.push({ item: it, dist: d });
+        }
+      }
+    }
+    return out.sort((a, b) => a.dist - b.dist);
+  }
+}

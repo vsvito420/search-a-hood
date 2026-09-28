@@ -1,0 +1,35 @@
+# Bewertet alle Wohnungen aus watchlist.txt und schreibt ein Ranking in die Job-Zusammenfassung.
+# Start: Actions → „Watchlist“ → Run workflow. Für automatische Läufe den schedule-Block einkommentieren
+# (bitte sparsam – Overpass/Nominatim/Transitous sind freie Community-Dienste).
+name: Watchlist
+
+on:
+  workflow_dispatch:
+    inputs:
+      preset:
+        description: Preset (informatiker, nachteule, ruhig, bubatz, familie)
+        default: informatiker
+      goal:
+        description: 'Optional: Pendel-Ziel „Name|Adresse|bike/transit/foot/car|Minuten“'
+        default: ''
+  # schedule:
+  #   - cron: '17 6 * * 1'   # montags 06:17 UTC
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Bewerten
+        env:
+          PRESET: ${{ inputs.preset || 'informatiker' }}
+          GOAL: ${{ inputs.goal }}
+        run: |
+          FILE=watchlist.txt
+          [ -f "$FILE" ] || FILE=watchlist.example.txt
+          ARGS=(score --file "$FILE" -p "$PRESET" --format md)
+          [ -n "$GOAL" ] && ARGS+=(-g "$GOAL")
+          node bin/search-a-hood.mjs "${ARGS[@]}" | tee -a "$GITHUB_STEP_SUMMARY"

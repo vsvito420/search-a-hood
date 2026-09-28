@@ -1,0 +1,7 @@
+# Beobachtungsliste für search-a-hood – eine Wohnung pro Zeile:
+# Adresse | Kaltmiete € | m² | Link zum Inserat
+# Kopiere die Datei nach watchlist.txt und starte den Workflow „Watchlist“ (Actions-Tab).
+Oranienstraße 185, 10999 Berlin | 1150 | 62 | https://example.org/expose/1
+Wiener Straße 10, 10999 Berlin | 980 | 55
+Schillerpromenade 20, 12049 Berlin | 890 | 58
+52.5010, 13.4230 | 1300 | 70
