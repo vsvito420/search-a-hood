@@ -13,6 +13,7 @@ import transitRail from './transit-rail.js';
 import transitBus from './transit-bus.js';
 import carsharing from './carsharing.js';
 import park from './park.js';
+import greenShare from './green-share.js';
 import gym from './gym.js';
 import schoolKita from './school-kita.js';
 import bubatz from './bubatz.js';
@@ -53,6 +54,7 @@ export const BUILTIN_MODULES = [
   clubMate,
   electronics,
   park,
+  greenShare,
   gym,
   library,
   schoolKita,

@@ -84,3 +84,21 @@ test('DataStore: Sammelabfrage, Fallback auf Einzelabfragen, Gebietswechsel', as
   ds.setArea({ south: 5, west: 1, north: 6, east: 2 });
   assert.equal(ds.get('fuel'), undefined);
 });
+
+test('Flächen-Module: Query mit Relationen + zugeschnittener Geometrie, Klassifizierung', () => {
+  const mods = [
+    { id: 'green', query: ['[leisure=park]'], geometry: 'area' },
+    { id: 'parkpoint', query: ['[leisure=park]'], geometry: 'point' },
+  ];
+  const q = buildCombinedQuery(mods, { south: 1, west: 2, north: 3, east: 4 });
+  assert.match(q, /way\[leisure=park\]\(1,2,3,4\);relation\[leisure=park\]\(1,2,3,4\);\)->\.a;\.a out tags geom\(1,2,3,4\);/);
+  const els = [
+    { type: 'way', id: 1, tags: { leisure: 'park' }, center: { lat: 0, lon: 0 } }, // aus .p (Mittelpunkt)
+    { type: 'way', id: 1, tags: { leisure: 'park' }, geometry: [{ lat: 0, lon: 0 }] }, // aus .a
+    { type: 'relation', id: 2, tags: { leisure: 'park' }, members: [] },
+  ];
+  const c = classify(els, mods);
+  assert.deepEqual(c.get('green').map((e) => e.type + e.id), ['way1', 'relation2']);
+  assert.deepEqual(c.get('parkpoint').map((e) => e.type + e.id), ['way1']);
+  assert.ok(!c.get('parkpoint')[0].geometry);
+});

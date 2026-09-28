@@ -20,6 +20,7 @@ import { renderCandidateTable, sortValue } from './ui/candidates.js';
 import { createPalette } from './ui/palette.js';
 import { buildReportHtml, openReport } from './ui/report.js';
 import { osrmField, transitField, transitReach, CommuteIndex, COMMUTE_MODES } from './core/commute.js';
+import { ShareField, ShareIndex } from './core/share.js';
 
 if (!window.L) {
   document.getElementById('status').textContent = 'Kartenbibliothek (Leaflet) konnte nicht geladen werden – Netzwerk/Adblocker prüfen und neu laden.';
@@ -467,7 +468,7 @@ async function analyze(bbox) {
   }
   state.bbox = bbox;
   // Daten mit Rand laden, sonst wirken Lagen am Rand besser als sie sind (POIs knapp außerhalb fehlen).
-  const pad = Math.min(1000, Math.max(200, ...dataModules().map((m) => searchRadius(state.settings[m.id]))));
+  const pad = Math.min(1000, Math.max(200, ...dataModules().map((m) => (m.geometry === 'area' ? (m.shareRadius || 300) + 50 : searchRadius(state.settings[m.id])))));
   state.data.setArea(padBbox(bbox, pad));
   $('#analyze-btn').disabled = true;
   try {
@@ -505,6 +506,18 @@ function filterElements(module, settings, elements) {
 
 // Netzwerk-Distanzfelder sind teuer → Cache nach allem, was sie beeinflusst
 const fieldCache = new Map();
+const shareCache = new Map();
+function shareSource(m, elements) {
+  const key = `${state.data.key}|${m.id}|${elements.length}`;
+  let f = shareCache.get(key);
+  if (!f) {
+    f = new ShareField(elements, state.data.bbox, m.shareRadius || 300);
+    if (shareCache.size > 20) shareCache.clear();
+    shareCache.set(key, f);
+  }
+  return new ShareIndex(f, `${f.polygons} Flächen`);
+}
+
 function distanceSource(m, s, points) {
   const g = state.graph?.key === state.data.key ? state.graph.graph : null;
   // Luftlinie für: Linien (Lärm breitet sich nicht über Wege aus), "weit weg" (Sichtweite), k-nächster (k>1)
@@ -555,6 +568,10 @@ function rebuild() {
       total: d.elements.length,
       hoursShare: withHours != null && d.elements.length ? withHours / d.elements.length : null,
     };
+    if (m.geometry === 'area') {
+      state.layers.set(m.id, { module: m, settings: s, index: shareSource(m, elements), elements: [] });
+      continue;
+    }
     const points = elementsToPoints(elements, m.geometry);
     state.layers.set(m.id, { module: m, settings: s, index: distanceSource(m, s, points), elements });
     if (s.showMarkers) drawMarkers(m, s, elements);
@@ -1117,6 +1134,7 @@ const palette = createPalette($('#palette'), () => [
   { label: '🚆 ÖPNV-Isochrone (30 min) am letzten Klickpunkt', run: () => (state.lastClick ? drawTransitIsochrone(state.lastClick) : setStatus('Erst auf die Karte klicken.', true)) },
   { label: '🎚 Relative Farbskala an/aus', hint: 'R', run: () => relBox.click() },
   { label: '📅 Wochen-Zeitraffer', hint: 'T', run: () => toggleTimeline(true) },
+  { label: '📍 Standort-Check „Hier“ (GPS)', hint: 'H', run: () => checkHere() },
   ...(state.focusModule ? [{ label: '◉ Einzelansicht beenden', run: () => ((state.focusModule = null), refreshPanel(), scheduleRebuild()) }] : []),
   { label: '🔗 Permalink kopieren', run: () => $('#permalink-btn').click() },
   { label: '⬇ Kandidaten als CSV', run: () => $('#export-cand').click() },
@@ -1155,6 +1173,7 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'i') drawIsochrone();
   else if (k === 'r') relBox.click();
   else if (k === 't') toggleTimeline();
+  else if (k === 'h') checkHere();
   else if (k === ' ' && !tl.el.hidden) (e.preventDefault(), togglePlay());
   else if (k === 'escape') map.closePopup();
   else if (/^[1-4]$/.test(k)) showTab(['criteria', 'candidates', 'layers', 'dev'][+k - 1]);
@@ -1170,6 +1189,29 @@ setStatus(fromLink ? 'Permalink geladen – „analysieren“ drücken (A).' : '
 const showEngine = () => ($('#hours-engine').textContent = hoursEngine());
 showEngine();
 loadHoursLib().then((ok) => (showEngine(), ok && scheduleRebuild()));
+
+// ---------- „Hier“: Standort-Check per GPS, z. B. vor der Haustür bei der Besichtigung
+function checkHere() {
+  if (!navigator.geolocation) return setStatus('Standortbestimmung wird vom Browser nicht unterstützt.', true);
+  setStatus('📍 Bestimme Standort …');
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      const here = L.latLng(pos.coords.latitude, pos.coords.longitude);
+      state.lastClick = here;
+      L.circle(here, { radius: pos.coords.accuracy, weight: 1, fillOpacity: 0.1, interactive: false }).addTo(candLayer);
+      // Liegt der Punkt nicht (mit Abstand zum Rand) im analysierten Gebiet → Gebiet um den Punkt analysieren
+      const inner = state.bbox && inBbox(padBbox(state.bbox, -150), here.lat, here.lng);
+      if (!inner) {
+        map.setView(here, 16);
+        await analyze(padBbox({ south: here.lat, west: here.lng, north: here.lat, east: here.lng }, 700));
+      }
+      if (state.layers.size) showReport(here);
+    },
+    (err) => setStatus(`Standort nicht verfügbar: ${err.message}`, true),
+    { enableHighAccuracy: true, timeout: 15_000, maximumAge: 30_000 },
+  );
+}
+$('#here-btn').addEventListener('click', checkHere);
 
 // ---------- Deep-Links: ?addr=…&at=lat,lon&z=16&preset=informatiker&walk=1&time=2026-10-02T23:00&run=1
 async function applyQueryParams() {

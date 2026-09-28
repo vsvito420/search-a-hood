@@ -34,7 +34,8 @@ export const PRESETS = [
     name: '🌿 Ruhig & grün',
     description: 'Weg von Hauptstraßen, Gleisen und Clubs, Park in der Nähe.',
     modules: {
-      park: { enabled: true, distance: 400, weight: 2 },
+      park: { enabled: true, distance: 400, weight: 1.5 },
+      'green-share': { enabled: true, distance: 30, weight: 1.5 },
       'road-noise': { enabled: true, distance: 200, weight: 2 },
       'rail-noise': { enabled: true, distance: 200, weight: 1 },
       'nightlife-noise': { enabled: true, distance: 200, weight: 1 },

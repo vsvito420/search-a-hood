@@ -11,8 +11,12 @@ const shot = process.argv[2];
 const errors = [];
 
 const browser = await chromium.launch(process.env.HTTPS_PROXY ? { args: [`--proxy-server=${process.env.HTTPS_PROXY}`] } : {});
-const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: true });
-await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
+const ctx = await browser.newContext({
+  viewport: { width: 1440, height: 900 },
+  ignoreHTTPSErrors: true,
+  geolocation: { latitude: 52.4995, longitude: 13.4185, accuracy: 25 }, // vor der Haustür in Kreuzberg
+});
+await ctx.grantPermissions(['clipboard-read', 'clipboard-write', 'geolocation']);
 const page = await ctx.newPage();
 page.on('pageerror', (e) => (errors.push(e.message), console.error(`\n  ⚠ Seitenfehler: ${e.message}`)));
 
@@ -193,6 +197,13 @@ await step('ÖPNV-Isochrone', async () => {
   await waitStatus(/Haltestellen in|fehlgeschlagen/, 120_000);
   await snap('8-oepnv-isochrone');
   return status();
+});
+
+await step('📍 Hier (GPS)', async () => {
+  await page.evaluate(() => void window.searchAHood.map.closePopup());
+  await click('#here-btn');
+  await page.waitForSelector('.leaflet-popup-content .score', { timeout: 120_000 });
+  return (await page.textContent('.leaflet-popup-content .why')) || (await page.textContent('.leaflet-popup-content .score')).trim();
 });
 
 await step('Befehlspalette', async () => {

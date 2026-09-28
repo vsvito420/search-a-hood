@@ -27,7 +27,7 @@ export function buildReportHtml(place, ev, layers, { time, distMode }) {
       const open = p.module.supportsHours && p.hit ? isOpenAt(tags.opening_hours, time) : undefined;
       const openTxt = open === true ? '<span class="ok">offen</span>' : open === false ? '<span class="bad">zu</span>' : open === null ? '<span class="muted">?</span>' : '';
       let counts = '';
-      const isMin = p.module.unit === 'min';
+      const isMin = p.module.unit && p.module.unit !== 'm';
       if (p.module.geometry !== 'line' && layer && !isMin) {
         const idx = new SpatialIndex(elementsToPoints(layer.elements, 'point'));
         counts = RINGS.map((m) => idx.within(place.lat, place.lon, m * 80).length).join(' / ');

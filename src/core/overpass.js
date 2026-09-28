@@ -27,10 +27,13 @@ export function buildCombinedQuery(modules, bbox) {
   const b = bboxStr(bbox);
   const pts = new Set();
   const lines = new Set();
-  for (const m of modules) for (const s of m.query) (m.geometry === 'line' ? lines : pts).add(s);
+  const areas = new Set();
+  for (const m of modules) for (const s of m.query) (m.geometry === 'line' ? lines : m.geometry === 'area' ? areas : pts).add(s);
   let q = '[out:json][timeout:120];';
   if (pts.size) q += `(${[...pts].map((s) => `nwr${s}(${b});`).join('')})->.p;.p out tags center;`;
   if (lines.size) q += `(${[...lines].map((s) => `way${s}(${b});`).join('')})->.l;.l out tags geom;`;
+  // Flächen inkl. Multipolygon-Relationen; Geometrie auf das Gebiet zugeschnitten (riesige Wälder!)
+  if (areas.size) q += `(${[...areas].map((s) => `way${s}(${b});relation${s}(${b});`).join('')})->.a;.a out tags geom(${b});`;
   return q;
 }
 
@@ -42,10 +45,11 @@ export function classify(elements, modules) {
   const out = new Map(modules.map((m) => [m.id, []]));
   const matchers = modules.map((m) => [m, compileSelectors(m.query)]);
   for (const el of elements) {
-    const isLine = Array.isArray(el.geometry);
+    const hasGeom = Array.isArray(el.geometry);
+    const hasMembers = Array.isArray(el.members);
     for (const [m, match] of matchers) {
-      if ((m.geometry === 'line') !== isLine) continue;
-      if (match(el.tags)) out.get(m.id).push(el);
+      const fits = m.geometry === 'area' ? hasGeom || hasMembers : m.geometry === 'line' ? hasGeom && el.type === 'way' : !hasGeom && !hasMembers;
+      if (fits && match(el.tags)) out.get(m.id).push(el);
     }
   }
   return out;
@@ -61,7 +65,7 @@ export function elementsToPoints(elements, geometry = 'point') {
     const tags = el.tags || {};
     const base = { id: `${el.type}/${el.id}`, tags };
     if (geometry === 'line' && el.geometry) {
-      for (const p of densify(el.geometry, 25)) pts.push({ ...base, lat: p.lat, lon: p.lon });
+      for (const p of densify(el.geometry.filter(Boolean), 25)) pts.push({ ...base, lat: p.lat, lon: p.lon });
       continue;
     }
     const lat = el.lat ?? el.center?.lat;

@@ -16,6 +16,7 @@ export function formatDist(m) {
 /** Wert eines Kriteriums formatieren – Meter oder (bei Zielen) Minuten. */
 export function fmtValue(module, v) {
   if (module?.unit === 'min') return Number.isFinite(v) ? `${Math.round(v)} min` : '–';
+  if (module?.unit === '%') return Number.isFinite(v) ? `${Math.round(v)} %` : '–';
   return formatDist(v);
 }
 
@@ -47,7 +48,7 @@ export function reportPopup({ parts, score }, latlng, { walk = false } = {}) {
   const rows = parts
     .map((p) => {
       const { module, settings, hit, dist, satisfied } = p;
-      const isMin = module.unit === 'min';
+      const isMin = module.unit && module.unit !== 'm'; // Minuten oder Prozent statt Meter
       const icon = satisfied ? '<span class="ok">✔</span>' : settings.required ? '<span class="bad">✘</span>' : '<span class="bad">·</span>';
       const what = hit && !isMin ? esc(labelOf(hit.item.tags || {}, '')) : '';
       const d = hit

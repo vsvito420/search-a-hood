@@ -55,7 +55,7 @@ export function renderCandidateTable(root, rows, { sortKey, sortDir, onSort, onF
         if (!p) return '<td class="muted">–</td>';
         const mark = p.satisfied ? '✓' : p.required ? '✗' : '·';
         const val = p.hit ? fmtValue(m, p.dist) : p.settings.mode === 'far' ? 'weit' : '–';
-        const tip = `${m.name}: ${val} · ${Math.round(p.score * 100)} % ${p.satisfied ? '(Ziel erfüllt)' : p.required ? '(Pflicht verletzt)' : '(Ziel verfehlt)'}${p.hit?.item?.tags?.name && m.unit !== 'min' ? ` · ${p.hit.item.tags.name}` : ''}`;
+        const tip = `${m.name}: ${val} · ${Math.round(p.score * 100)} % ${p.satisfied ? '(Ziel erfüllt)' : p.required ? '(Pflicht verletzt)' : '(Ziel verfehlt)'}${p.hit?.item?.tags?.name && m.unit === 'm' ? ` · ${p.hit.item.tags.name}` : ''}`;
         return `<td class="cell" style="${cellStyle(p.score)}" title="${esc(tip)}">${mark} ${val}</td>`;
       }),
       `<td><button class="del" type="button" data-del="${r.idx}" title="entfernen">✕</button></td>`,

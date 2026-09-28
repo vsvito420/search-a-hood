@@ -22,6 +22,7 @@ import { WalkGraph, NetworkField, buildWalkQuery, WALK_SPEED_M_PER_MIN } from '.
 import { createGeocoder, parseCandidateLines, pricePerSqm } from '../src/core/candidates.js';
 import { scoreColor } from '../src/core/scoring.js';
 import { osrmField, transitField, CommuteIndex, COMMUTE_MODES } from '../src/core/commute.js';
+import { ShareField, ShareIndex } from '../src/core/share.js';
 
 const UA = 'search-a-hood-cli (+https://github.com/vsvito420/search-a-hood)';
 // Alle Dienste mit eigenem User-Agent ansprechen (Transitous blockt z. B. Nodes Standard-UA „node“)
@@ -150,7 +151,7 @@ async function score(places, opts) {
   }
 
   // Ein Gebiet für alle Punkte (plus Rand) → eine Overpass-Abfrage
-  const radius = Math.min(2000, Math.max(200, ...mods.map((m) => searchRadius(settings[m.id]))));
+  const radius = Math.min(2000, Math.max(200, ...mods.map((m) => (m.geometry === 'area' ? (m.shareRadius || 300) + 50 : searchRadius(settings[m.id])))));
   const lats = points.map((p) => p.lat);
   const lons = points.map((p) => p.lon);
   const bbox = padBbox({ south: Math.min(...lats), north: Math.max(...lats), west: Math.min(...lons), east: Math.max(...lons) }, radius + 200);
@@ -183,6 +184,11 @@ async function score(places, opts) {
       if (m.supportsHours && s.openAtTime) return isOpenAt(el.tags.opening_hours, time) === true;
       return true;
     });
+    if (m.geometry === 'area') {
+      const f = new ShareField(els, bbox, m.shareRadius || 300);
+      layers.push({ module: m, settings: s, index: new ShareIndex(f, `${f.polygons} Flächen`), count: f.polygons });
+      continue;
+    }
     const pts = elementsToPoints(els, m.geometry);
     const useNet = graph && m.geometry !== 'line' && s.mode !== 'far';
     layers.push({ module: m, settings: s, index: useNet ? new NetworkField(graph, pts, searchRadius(s)) : new SpatialIndex(pts), count: els.length });
@@ -234,7 +240,7 @@ async function score(places, opts) {
       const cells = cols.map((m) => {
         const p = byId.get(m.id);
         if (!p) return '–';
-        const v = !p.hit ? (p.settings.mode === 'far' ? 'weit' : '–') : m.unit === 'min' ? `${Math.round(p.dist)} min` : fmtDist(p.dist);
+        const v = !p.hit ? (p.settings.mode === 'far' ? 'weit' : '–') : m.unit !== 'm' ? `${Math.round(p.dist)} ${m.unit}` : fmtDist(p.dist);
         return `${p.satisfied ? '✅' : p.required ? '❌' : '⚠️'} ${v}`;
       });
       lines.push(`| ${i + 1} | ${link} | **${r.score == null ? 'raus' : Math.round(r.score * 100) + ' %'}** | ${r.rent ?? ''} | ${ppsqm ? ppsqm.toFixed(1) : ''} | ${cells.join(' | ')} |`);
@@ -264,7 +270,7 @@ async function score(places, opts) {
           module: p.module.id,
           unit: p.module.unit,
           distance: Number.isFinite(p.dist) ? Math.round(p.dist) : null,
-          walkMinutes: p.module.unit === 'min' ? null : Number.isFinite(p.dist) ? Math.max(1, Math.round(p.dist / WALK_SPEED_M_PER_MIN)) : null,
+          walkMinutes: p.module.unit !== 'm' ? null : Number.isFinite(p.dist) ? Math.max(1, Math.round(p.dist / WALK_SPEED_M_PER_MIN)) : null,
           satisfied: p.satisfied,
           score: +p.score.toFixed(3),
           nearest: p.hit ? { name: p.hit.item.tags?.name || null, osm: p.hit.item.id } : null,
@@ -282,15 +288,15 @@ async function score(places, opts) {
     console.log(`   Score ${scoreFmt(r.score)}`);
     for (const p of r.parts) {
       const icon = p.satisfied ? c('32', '✔') : p.required ? c('31', '✘') : c('33', '·');
-      const isMin = p.module.unit === 'min';
+      const isMin = p.module.unit !== 'm';
       const d = p.hit
         ? isMin
-          ? `${Math.round(p.dist)} min`
+          ? `${Math.round(p.dist)} ${p.module.unit}`
           : `${fmtDist(p.dist)} ${dim(`(${Math.max(1, Math.round(p.dist / WALK_SPEED_M_PER_MIN))} min)`)}`
         : p.settings.mode === 'far'
           ? dim('weit weg')
           : c('31', isMin ? 'zu weit' : 'keiner');
-      const goal = dim(`${p.settings.mode === 'far' ? '≥' : '≤'} ${isMin ? `${p.settings.distance} min` : fmtDist(p.settings.distance)}`);
+      const goal = dim(`${p.settings.mode === 'far' ? '≥' : '≤'} ${isMin ? `${p.settings.distance} ${p.module.unit}` : fmtDist(p.settings.distance)}`);
       const name = p.hit?.item.tags?.name && !isMin ? dim(p.hit.item.tags.name) : '';
       console.log(`   ${icon} ${pad(p.module.name, 30)} ${pad(d, 22)} ${pad(goal, 12)} ${name}`);
     }

@@ -27,7 +27,7 @@ jobs:
       - name: Site zusammenstellen
         run: |
           mkdir _site
-          cp -r index.html styles.css src _site/
+          cp -r index.html styles.css manifest.webmanifest icon.svg src _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
