@@ -1,5 +1,7 @@
 # search-a-hood 🏘️
 
+**Live:** https://vsvito420.github.io/search-a-hood/
+
 **Ein modulares OSINT-Tool für die Wohnungssuche.** Du legst beliebige Kriterien übereinander, zum Beispiel eine 24/7-Tankstelle in max. 800 m, einen Späti, der Freitag um 23 Uhr noch offen hat, S-Bahn nah, mehr als 120 m bis zur Hauptstraße und außerhalb der Bubatz-Sperrzonen. Das Tool zeigt dir dann als Heatmap, **wo** in der Stadt das alles zusammenpasst: nach Luftlinie oder nach **echten Fußwegen**.
 
 > „Wo kann ich wohnen, ohne mir Sorgen zu machen, ob der Laden noch auf hat oder der Weg zu lang ist?“
@@ -271,7 +273,7 @@ npm start & node tests/e2e/smoke.mjs shot  # End-to-End im echten Chromium, spei
 OVERPASS_VIA_CURL=1 node tests/e2e/smoke.mjs   # hinter Proxies, die CORS-Header entfernen
 ```
 
-GitHub Actions führt Syntax-Check, Lint und Unit-Tests auf Node 20 und 22 aus (`.github/workflows/ci.yml`). `pages.yml` veröffentlicht die App auf GitHub Pages. Dafür einmalig unter Settings → Pages die Source „GitHub Actions“ wählen.
+GitHub Actions führt Syntax-Check, Lint und Unit-Tests auf Node 20 und 22 aus (`.github/workflows/ci.yml`). Live ist die App unter **https://vsvito420.github.io/search-a-hood/**. GitHub Pages veröffentlicht sie direkt aus `main` (Settings → Pages → „Deploy from branch“), `.nojekyll` sorgt dafür, dass die Dateien unverändert ausgeliefert werden.
 
 ---
 
