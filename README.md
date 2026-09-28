@@ -33,9 +33,11 @@
 | ⌨️ **Für Devs** | Befehlspalette (⌘K), Tastenkürzel, Permalinks, Deep-Links (`?addr=…&preset=…&run=1`), Config-Import/Export, GeoJSON-Export, eigene Overpass-Instanz, `window.searchAHood` in der Konsole |
 | 💻 **CLI** | `search-a-hood score "Adresse" -p informatiker --walk --json` |
 
-| Wochen-Zeitraffer: Sa 03:00 | Wohnungsvergleich | Steckbrief |
+| Wochen-Zeitraffer: Sa 03:00 | Wohnungsvergleich (Score-Matrix) | Steckbrief |
 |---|---|---|
 | ![Zeitraffer](docs/screenshot-zeitraffer.jpg) | ![Kandidaten](docs/screenshot-kandidaten.jpg) | ![Steckbrief](docs/screenshot-steckbrief.jpg) |
+| **Pendel-Check: 🚆 Arbeit & 🚲 Uni im Report** | **ÖPNV-Isochrone: 30 min ab Kotti** | |
+| ![Pendeln](docs/screenshot-pendeln.jpg) | ![ÖPNV](docs/screenshot-oepnv.jpg) | |
 
 ### Presets
 
