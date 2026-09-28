@@ -6,6 +6,9 @@ import spaeti from './spaeti.js';
 import supermarket from './supermarket.js';
 import bakery from './bakery.js';
 import parcel from './parcel.js';
+import atm from './atm.js';
+import laundry from './laundry.js';
+import cinema from './cinema.js';
 import pharmacy from './pharmacy.js';
 import doctors from './doctors.js';
 import hospital from './hospital.js';
@@ -39,6 +42,8 @@ export const BUILTIN_MODULES = [
   supermarket,
   bakery,
   parcel,
+  atm,
+  laundry,
   pharmacy,
   doctors,
   hospital,
@@ -56,6 +61,7 @@ export const BUILTIN_MODULES = [
   park,
   greenShare,
   gym,
+  cinema,
   library,
   schoolKita,
   bubatz,

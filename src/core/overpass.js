@@ -78,6 +78,9 @@ export function elementsToPoints(elements, geometry = 'point') {
 
 const memCache = new Map();
 
+/** Stand der OSM-Daten der letzten Antwort (osm3s.timestamp_osm_base) – für die Anzeige. */
+export let lastDataTimestamp = null;
+
 let customEndpoints = null;
 /** Eigene Overpass-Instanz(en) setzen (null = Standardliste). */
 export function setEndpoints(list) {
@@ -109,6 +112,7 @@ export async function runQuery(query, { signal, endpoints = customEndpoints || E
           throw new Error(`${new URL(url).host}: ${json.remark}`);
         }
         const elements = json.elements || [];
+        if (json.osm3s?.timestamp_osm_base) lastDataTimestamp = json.osm3s.timestamp_osm_base;
         memCache.set(query, elements);
         return elements;
       } catch (e) {

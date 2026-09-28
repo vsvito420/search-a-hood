@@ -206,6 +206,20 @@ await step('📍 Hier (GPS)', async () => {
   return (await page.textContent('.leaflet-popup-content .why')) || (await page.textContent('.leaflet-popup-content .score')).trim();
 });
 
+await step('Preset „Ruhig & grün“ mit Grünanteil', async () => {
+  await page.evaluate(() => void window.searchAHood.map.closePopup());
+  await click('[data-tab="criteria"]');
+  await click('text=Ruhig & grün');
+  await waitStatus(/Zellen|fehlgeschlagen/);
+  await page.evaluate(() => {
+    const { map } = window.searchAHood;
+    map.fire('click', { latlng: L.latLng(52.4985, 13.4128), originalEvent: new MouseEvent('click') });
+  });
+  await page.waitForSelector('.leaflet-popup-content .score');
+  const row = await page.$$eval('.leaflet-popup-content tr', (trs) => trs.find((t) => /Grünanteil/.test(t.textContent))?.textContent.replace(/\s+/g, ' ').trim());
+  return `${await page.textContent('[data-count-for="green-share"]')} · ${row}`;
+});
+
 await step('Befehlspalette', async () => {
   await page.keyboard.press('Control+K');
   await page.fill('#palette-input', 'bubatz');

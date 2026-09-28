@@ -4,7 +4,7 @@ import { PRESETS } from './presets.js';
 import { store } from './app/store.js';
 import { encodeState, decodeState, sanitize } from './app/permalink.js';
 import { SpatialIndex } from './core/spatial-index.js';
-import { elementsToPoints, runQuery, setEndpoints } from './core/overpass.js';
+import { elementsToPoints, runQuery, setEndpoints, lastDataTimestamp } from './core/overpass.js';
 import { DataStore, bboxKey } from './core/datastore.js';
 import { isValidSelector } from './core/tagfilter.js';
 import { analyzeArea, evaluatePoint, searchRadius } from './core/analyzer.js';
@@ -504,6 +504,14 @@ function filterElements(module, settings, elements) {
   });
 }
 
+/** „vor 3 min“ – wie frisch sind die OSM-Daten der Overpass-Instanz? */
+function dataAge() {
+  if (!lastDataTimestamp) return '';
+  const min = Math.max(0, Math.round((Date.now() - new Date(lastDataTimestamp).getTime()) / 60000));
+  const rel = min < 60 ? `${min} min` : min < 2880 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} Tagen`;
+  return `OSM-Datenstand: vor ${rel} (${new Date(lastDataTimestamp).toLocaleString('de-DE')})`;
+}
+
 // Netzwerk-Distanzfelder sind teuer → Cache nach allem, was sie beeinflusst
 const fieldCache = new Map();
 const shareCache = new Map();
@@ -605,6 +613,7 @@ function rebuild() {
   renderCandidates();
   const ms = Math.round(performance.now() - t0);
   const pct = Math.round(res.coverage * 100);
+  $('#data-age').textContent = dataAge();
   const walk =
     state.distMode === 'walk'
       ? state.graph?.graph && state.graph.key === state.data.key

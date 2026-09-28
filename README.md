@@ -16,9 +16,11 @@
 
 | | |
 |---|---|
-| 🧩 **Module** | 29 Kriterien in 9 Kategorien. Eigene Module legst du per Overpass-Filter direkt in der UI an, ohne Code. |
+| 🧩 **Module** | 33 Kriterien in 9 Kategorien, vom 24/7-Späti über Waschsalon und Glasfaser bis zum **Grünanteil im Umkreis**. Eigene Module legst du per Overpass-Filter direkt in der UI an, ohne Code. |
 | 🎯 **Scoring** | „nah dran ≤ X m“ oder „weit weg ≥ X m“, Gewicht 0–3, Pflichtkriterien, „mind. N im Umkreis“ (k-nächster Treffer) |
 | 🚶 **Echte Fußwege** | Das Wegenetz wird als Graph im Browser aufgebaut, pro Modul läuft ein Multi-Source-Dijkstra. Flüsse, Gleise und Autobahnen ohne Übergang zählen dann als Umweg. |
+| 🌳 **Grünanteil** | Wie viel Prozent der Umgebung (±300 m) sind Park, Wald, Wiese oder Kleingarten? Die Polygone inklusive Multipolygon-Relationen werden gerastert und per Summed-Area-Table ausgewertet. |
+| 📍 **Hier-Check** | Bei der Besichtigung vor der Haustür reicht ein Tap: GPS-Position → Analyse → Report. Die App ist aufs Handy installierbar (Web-App-Manifest). |
 | 🎯 **Pendel-Check** | „Arbeit ≤ 25 min mit ÖPNV“, „Uni ≤ 20 min mit dem Rad“ wird zum Kriterium wie jedes andere. Rad, Fuß und Auto kommen von FOSSGIS-OSRM, ÖPNV von Transitous (MOTIS) mit echtem Fahrplan und Ankunftszeit. |
 | ⏱ **Isochronen** | Was ist in 5/10/15 Minuten zu Fuß erreichbar? Die Darstellung ist ein Netz aus Straßensegmenten. Dazu kommt eine **ÖPNV-Isochrone**: alle Haltestellen, die ab dem Klickpunkt in 30 min mit echtem Fahrplan erreichbar sind, inklusive Umstiegen. |
 | 🕒 **Öffnungszeiten** | Mit „nur geöffnet“ zählen nur Treffer, die zum gewählten Zeitpunkt offen sind. Schnellwahl für Fr 23 Uhr, 3 Uhr nachts usw. |
@@ -200,6 +202,34 @@ Presets sind reine Einstellungs-Pakete in `src/presets.js` (optional mit `overla
 
 ## Architektur
 
+```mermaid
+flowchart LR
+  subgraph Quellen
+    OP[(Overpass / OSM)]
+    NO[(Nominatim)]
+    OS[(FOSSGIS-OSRM)]
+    TR[(Transitous)]
+    WMS[(WMS: Breitbandatlas …)]
+  end
+  subgraph Kern["core/ – rein, getestet, Browser + Node"]
+    DS[DataStore<br/>1 Sammelabfrage] --> TF[tagfilter<br/>verteilt auf Module]
+    TF --> IDX{Distanzquelle}
+    IDX -->|Luftlinie| SI[SpatialIndex<br/>nearest/kNearest]
+    IDX -->|Fußweg| NF[NetworkField<br/>Multi-Source-Dijkstra]
+    IDX -->|Fläche| SH[ShareField<br/>Summed-Area-Table]
+    IDX -->|Ziel| CI[CommuteIndex<br/>OSRM-Raster / ÖPNV]
+    SI & NF & SH & CI --> AN[analyzer<br/>Raster · Score · Pflicht · Top-Spots]
+  end
+  OP --> DS
+  OS & TR --> CI
+  AN --> WEB[Web-App<br/>Heatmap · Report · Vergleich · Steckbrief]
+  AN --> CLI[CLI<br/>text · json · md]
+  NO --> WEB & CLI
+  WMS --> WEB
+```
+
+Jede Distanzquelle hat dieselbe Schnittstelle `nearest(lat, lon, max) → {item, dist}`. Deshalb laufen Luftlinie, Fußwege, Grünanteil und Pendelzeiten ohne Sonderfälle durch Analyzer, Report, Vergleichstabelle und CLI.
+
 ```
 index.html · styles.css
 bin/search-a-hood.mjs        Headless-CLI (gleicher Kern wie die Web-App)
@@ -213,6 +243,8 @@ src/
     datastore.js             Daten pro Gebiet, Sammel- → Einzelabfrage
     spatial-index.js         Hash-Grid: nearest, kNearest, within
     routing.js               Wegenetz → CSR-Graph, Dijkstra (Min-Heap), NetworkField, Isochronen
+    commute.js               Pendelzeiten: OSRM-Table (bilinear) + Transitous (one-to-all)
+    share.js                 Flächenanteil: Ringe zusammensetzen, Scanline-Raster, Summed-Area-Table
     analyzer.js · scoring.js Raster, Score, Pflicht, Gleichstand, Top-Spots
     hours.js · oh-lite.js    Öffnungszeiten (Bibliothek + eigener Fallback-Parser)
     candidates.js            Eingabe-Parser, Geocoder (1 req/s + Cache), CSV
