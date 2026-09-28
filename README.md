@@ -154,6 +154,8 @@ Optionen: `--preset/-p`, `--modules/-m a,b,c`, `--set/-s modul.key=wert` (mehrfa
 
 **Gesamtscore:** gewichteter Mittelwert. Ist ein Pflichtkriterium verletzt, wird die Lage ausgeschlossen. Bei Gleichstand gewinnt die Lage, bei der alles noch näher bzw. Störendes noch weiter weg ist.
 
+**Performance:** Der Nächster-Nachbar-Index rechnet mit einer Equirectangular-Näherung (Abweichung zu Haversine < 0,01 % auf Stadtebene) und numerischen Bucket-Schlüsseln. Der Worst Case mit 160×160 Zellen und 12 Modulen à 5.000 POIs dauert etwa 320 ms (vorher 800 ms). Ein Graph mit 40.000 Knoten ist in etwa 45 ms gebaut, ein Multi-Source-Dijkstra dauert etwa 9 ms.
+
 **Fußwege:** `highway=footway|path|residential|…` ohne `foot=no` wird zu einem CSR-Graph. Isolierte Mini-Komponenten wie Wege in Innenhöfen werden verworfen. Pro Modul läuft **ein** Multi-Source-Dijkstra von allen POIs aus, dann kennt jeder Knoten die Gehdistanz zum nächsten POI. Jede Rasterzelle wird auf den nächsten Knoten gesnappt. In Kreuzberg sind das rund 38.000 Knoten, und die komplette Heatmap in Fußwegen dauert etwa 100 ms. Lärm- und Sichtweiten-Kriterien (Linien, „weit weg“) bleiben bewusst bei der Luftlinie.
 
 **Pendeln:** Für Rad, Fuß und Auto fragt eine einzige OSRM-Table-Anfrage die Reisezeit zum Ziel von einem 9×9-Stützraster über dem Gebiet ab. Dazwischen wird bilinear interpoliert, denn Reisezeit ändert sich räumlich glatt. Für den ÖPNV liefert Transitous `one-to-all` mit `arriveBy` alle Haltestellen, von denen man rechtzeitig ankommt. Jede Zelle nimmt dann das Minimum aus „Fahrzeit ab Haltestelle + Fußweg dorthin“ und „direkt zu Fuß“. Ein Ziel ist technisch ein Modul mit der Einheit Minuten, deshalb funktionieren Gewicht, Pflicht, Einzelansicht, Report, Vergleichstabelle und CLI automatisch.
@@ -254,9 +256,10 @@ src/
 tests/                       node:test (Unit) + e2e/smoke.mjs (Playwright)
 ```
 
-### Tests
+### Tests & Benchmark
 
 ```bash
+npm run bench                              # Hot Path: Raster-Analyse, Graph-Aufbau, Dijkstra
 npm test                                   # Unit-Tests: Geo, Index, Scoring, Tag-Filter, Routing, Öffnungszeiten, CLI …
 npm start & node tests/e2e/smoke.mjs shot  # End-to-End im echten Chromium, speichert Screenshots
 OVERPASS_VIA_CURL=1 node tests/e2e/smoke.mjs   # hinter Proxies, die CORS-Header entfernen

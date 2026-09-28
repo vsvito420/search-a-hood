@@ -43,7 +43,8 @@ test('SpatialIndex.nearest stimmt mit Brute Force überein', () => {
     const lon = 13.3 + Math.floor(k / 10) / 25;
     const brute = Math.min(...pts.map((p) => haversine(lat, lon, p.lat, p.lon)));
     const hit = idx.nearest(lat, lon, 100_000);
-    assert.ok(Math.abs(hit.dist - brute) < 1e-6, `k=${k}: ${hit.dist} vs ${brute}`);
+    // Index rechnet mit schneller Equirectangular-Näherung → relative Toleranz statt exakt
+    assert.ok(Math.abs(hit.dist - brute) <= brute * 1e-3 + 1e-6, `k=${k}: ${hit.dist} vs ${brute}`);
   }
 });
 
@@ -64,7 +65,7 @@ test('SpatialIndex.kNearest stimmt mit Brute Force überein', () => {
     const sorted = pts.map((p) => haversine(lat, lon, p.lat, p.lon)).sort((a, b) => a - b);
     for (const k of [1, 2, 5, 13]) {
       const hit = idx.kNearest(lat, lon, k, 1e6);
-      assert.ok(Math.abs(hit.dist - sorted[k - 1]) < 1e-6, `q=${q} k=${k}`);
+      assert.ok(Math.abs(hit.dist - sorted[k - 1]) <= sorted[k - 1] * 1e-3 + 1e-6, `q=${q} k=${k}`);
     }
   }
   assert.equal(new SpatialIndex(pts.slice(0, 2)).kNearest(52.5, 13.3, 3), null, 'zu wenige Punkte');

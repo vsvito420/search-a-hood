@@ -14,6 +14,7 @@
     "start": "node scripts/serve.mjs",
     "test": "node --test",
     "test:e2e": "node tests/e2e/smoke.mjs",
+    "bench": "node scripts/bench.mjs",
     "cli": "node bin/search-a-hood.mjs"
   },
   "license": "MIT"

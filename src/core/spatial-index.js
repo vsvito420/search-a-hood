@@ -1,4 +1,17 @@
-import { haversine, metersPerDegree } from './geo.js';
+import { metersPerDegree } from './geo.js';
+
+const RAD = Math.PI / 180;
+const M_PER_DEG = 111_194.9; // Erdradius (6371 km) × π/180 – identisch zur Haversine-Basis
+
+/**
+ * Schnelle Distanz für kurze Strecken (Equirectangular mit cos der Abfragebreite).
+ * Abweichung zu Haversine < 0,01 % bis ~5 km – hier der Flaschenhals, daher ohne trig pro Punkt.
+ */
+function fastDist(lat, lon, cosLat, lat2, lon2) {
+  const dy = (lat2 - lat) * M_PER_DEG;
+  const dx = (lon2 - lon) * M_PER_DEG * cosLat;
+  return Math.sqrt(dx * dx + dy * dy);
+}
 
 /**
  * Einfacher Hash-Grid-Index für Nächster-Nachbar-Abfragen.
@@ -31,8 +44,9 @@ export class SpatialIndex {
     return [Math.floor((lon * this.m.lon) / this.bucket), Math.floor((lat * this.m.lat) / this.bucket)];
   }
 
+  // Numerischer Schlüssel statt "x:y"-String: keine String-Allokation pro Bucket-Lookup (Hot Path)
   #key(x, y) {
-    return `${x}:${y}`;
+    return (x + 1_048_576) * 2_097_152 + (y + 1_048_576);
   }
 
   /**
@@ -41,6 +55,7 @@ export class SpatialIndex {
    */
   nearest(lat, lon, maxDist = 5000) {
     if (!this.items.length) return null;
+    const cosLat = Math.cos(lat * RAD);
     const [cx, cy] = this.#cell(lat, lon);
     const maxRing = Math.ceil(maxDist / this.bucket) + 1;
     let best = null;
@@ -53,7 +68,7 @@ export class SpatialIndex {
           const arr = this.cells.get(this.#key(x, y));
           if (!arr) continue;
           for (const it of arr) {
-            const d = haversine(lat, lon, it.lat, it.lon);
+            const d = fastDist(lat, lon, cosLat, it.lat, it.lon);
             if (d < bestD) {
               bestD = d;
               best = it;
@@ -74,6 +89,7 @@ export class SpatialIndex {
   kNearest(lat, lon, k, maxDist = 5000) {
     if (k <= 1) return this.nearest(lat, lon, maxDist);
     if (this.items.length < k) return null;
+    const cosLat = Math.cos(lat * RAD);
     const [cx, cy] = this.#cell(lat, lon);
     const maxRing = Math.ceil(maxDist / this.bucket) + 1;
     const best = []; // sortiert, Länge ≤ k: {item, dist}
@@ -84,7 +100,7 @@ export class SpatialIndex {
           const arr = this.cells.get(this.#key(x, y));
           if (!arr) continue;
           for (const it of arr) {
-            const d = haversine(lat, lon, it.lat, it.lon);
+            const d = fastDist(lat, lon, cosLat, it.lat, it.lon);
             if (best.length === k && d >= best[k - 1].dist) continue;
             let i = best.length;
             while (i > 0 && best[i - 1].dist > d) i--;
@@ -101,6 +117,7 @@ export class SpatialIndex {
 
   /** Alle Punkte im Umkreis (für Zählungen wie "3 Supermärkte in 500 m"). */
   within(lat, lon, radius) {
+    const cosLat = Math.cos(lat * RAD);
     const [cx, cy] = this.#cell(lat, lon);
     const r = Math.ceil(radius / this.bucket);
     const out = [];
@@ -109,7 +126,7 @@ export class SpatialIndex {
         const arr = this.cells.get(this.#key(x, y));
         if (!arr) continue;
         for (const it of arr) {
-          const d = haversine(lat, lon, it.lat, it.lon);
+          const d = fastDist(lat, lon, cosLat, it.lat, it.lon);
           if (d <= radius) out.push({ item: it, dist: d });
         }
       }
