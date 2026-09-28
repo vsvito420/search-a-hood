@@ -16,12 +16,14 @@ import { runQuery } from '../src/core/overpass.js';
 import { evaluatePoint, searchRadius } from '../src/core/analyzer.js';
 import { SpatialIndex } from '../src/core/spatial-index.js';
 import { elementsToPoints } from '../src/core/overpass.js';
-import { padBbox } from '../src/core/geo.js';
+import { padBbox, bboxAreaKm2 } from '../src/core/geo.js';
+
+const MAX_GROUP_KM2 = 25; // größere Gebiete werden auf mehrere kleine Overpass-Abfragen verteilt
 import { isOpenAt } from '../src/core/hours.js';
 import { WalkGraph, NetworkField, buildWalkQuery, WALK_SPEED_M_PER_MIN } from '../src/core/routing.js';
 import { createGeocoder, parseCandidateLines, pricePerSqm } from '../src/core/candidates.js';
 import { scoreColor } from '../src/core/scoring.js';
-import { osrmField, transitField, CommuteIndex, COMMUTE_MODES } from '../src/core/commute.js';
+import { osrmPointsField, transitField, CommuteIndex, COMMUTE_MODES } from '../src/core/commute.js';
 import { ShareField, ShareIndex } from '../src/core/share.js';
 
 const UA = 'search-a-hood-cli (+https://github.com/vsvito420/search-a-hood)';
@@ -150,51 +152,72 @@ async function score(places, opts) {
     Object.assign(g, await locate(g.addr, geocode));
   }
 
-  // Ein Gebiet für alle Punkte (plus Rand) → eine Overpass-Abfrage
+  // Punkte räumlich gruppieren: pro Gruppe EIN kleines Gebiet (statt einer riesigen Box über die ganze Stadt)
   const radius = Math.min(2000, Math.max(200, ...mods.map((m) => (m.geometry === 'area' ? (m.shareRadius || 300) + 50 : searchRadius(settings[m.id])))));
-  const lats = points.map((p) => p.lat);
-  const lons = points.map((p) => p.lon);
-  const bbox = padBbox({ south: Math.min(...lats), north: Math.max(...lats), west: Math.min(...lons), east: Math.max(...lons) }, radius + 200);
+  const boxOf = (pts) =>
+    padBbox(
+      { south: Math.min(...pts.map((p) => p.lat)), north: Math.max(...pts.map((p) => p.lat)), west: Math.min(...pts.map((p) => p.lon)), east: Math.max(...pts.map((p) => p.lon)) },
+      radius + 200,
+    );
+  const groups = [];
+  for (const p of points) {
+    const g = groups.find((grp) => bboxAreaKm2(boxOf([...grp, p])) <= MAX_GROUP_KM2);
+    if (g) g.push(p);
+    else groups.push([p]);
+  }
+  if (groups.length > 1) log(`🗂  ${points.length} Adressen in ${groups.length} Gebieten`);
 
   const endpoints = opts.overpass || process.env.OVERPASS_URL ? [opts.overpass || process.env.OVERPASS_URL] : undefined;
   const run = (q, o) => runQuery(q, { ...o, endpoints, fetchImpl: uaFetch });
-  const store = new DataStore({ run });
-  store.setArea(bbox);
-  await store.ensure(mods, { onProgress: log });
-
-  let graph = null;
-  if (opts.walk) {
-    log('🚶 Lade Fußwegenetz …');
-    graph = new WalkGraph(await run(buildWalkQuery(bbox), { timeoutMs: 180_000 }));
-    log(`   ${graph.n.toLocaleString('de')} Knoten, ${graph.edgeCount.toLocaleString('de')} Kanten`);
-  }
-
-  const layers = [];
   const errors = [];
-  for (const m of mods) {
-    const s = settings[m.id];
-    const d = store.get(m.id);
-    if (!d || d.error) {
-      errors.push({ module: m.id, error: d?.error || 'keine Daten' });
-      continue;
+  const layerModules = new Map(); // für Spalten/JSON: alle Module, die irgendwo Daten hatten
+  const byPoint = new Map(); // Punkt → Layer seiner Gruppe
+  let walkNodes = 0;
+
+  for (const [gi, grp] of groups.entries()) {
+    const bbox = boxOf(grp);
+    const tag = groups.length > 1 ? ` [Gebiet ${gi + 1}/${groups.length}]` : '';
+    const store = new DataStore({ run });
+    store.setArea(bbox);
+    await store.ensure(mods, { onProgress: (m) => log(m + tag) });
+
+    let graph = null;
+    if (opts.walk) {
+      log(`🚶 Lade Fußwegenetz …${tag}`);
+      graph = new WalkGraph(await run(buildWalkQuery(bbox), { timeoutMs: 180_000 }));
+      walkNodes += graph.n;
+      log(`   ${graph.n.toLocaleString('de')} Knoten, ${graph.edgeCount.toLocaleString('de')} Kanten`);
     }
-    const els = d.elements.filter((el) => {
-      el.tags ||= {};
-      if (m.filter && !m.filter(el, { time, isOpenAt })) return false;
-      if (m.supportsHours && s.openAtTime) return isOpenAt(el.tags.opening_hours, time) === true;
-      return true;
-    });
-    if (m.geometry === 'area') {
-      const f = new ShareField(els, bbox, m.shareRadius || 300);
-      layers.push({ module: m, settings: s, index: new ShareIndex(f, `${f.polygons} Flächen`), count: f.polygons });
-      continue;
+
+    const layers = [];
+    for (const m of mods) {
+      const s = settings[m.id];
+      const d = store.get(m.id);
+      if (!d || d.error) {
+        errors.push({ module: m.id, error: `${d?.error || 'keine Daten'}${tag}` });
+        continue;
+      }
+      const els = d.elements.filter((el) => {
+        el.tags ||= {};
+        if (m.filter && !m.filter(el, { time, isOpenAt })) return false;
+        if (m.supportsHours && s.openAtTime) return isOpenAt(el.tags.opening_hours, time) === true;
+        return true;
+      });
+      layerModules.set(m.id, { module: m, settings: s, count: (layerModules.get(m.id)?.count || 0) + els.length });
+      if (m.geometry === 'area') {
+        const f = new ShareField(els, bbox, m.shareRadius || 300);
+        layers.push({ module: m, settings: s, index: new ShareIndex(f, `${f.polygons} Flächen`) });
+        continue;
+      }
+      const pts = elementsToPoints(els, m.geometry);
+      const useNet = graph && m.geometry !== 'line' && s.mode !== 'far' && (s.minCount || 1) === 1;
+      layers.push({ module: m, settings: s, index: useNet ? new NetworkField(graph, pts, searchRadius(s)) : new SpatialIndex(pts) });
     }
-    const pts = elementsToPoints(els, m.geometry);
-    const useNet = graph && m.geometry !== 'line' && s.mode !== 'far';
-    layers.push({ module: m, settings: s, index: useNet ? new NetworkField(graph, pts, searchRadius(s)) : new SpatialIndex(pts), count: els.length });
+    for (const p of grp) byPoint.set(p, layers);
   }
-  // Pendel-Ziele: Reisezeitfeld über die Kandidaten-Box (OSRM) bzw. Haltestellen (Transitous)
-  const pointBox = padBbox({ south: Math.min(...lats), north: Math.max(...lats), west: Math.min(...lons), east: Math.max(...lons) }, 150);
+
+  // Pendel-Ziele: exakte Reisezeiten zu jedem Kandidaten (OSRM) bzw. Haltestellen-Feld (Transitous)
+  const goalLayers = [];
   for (const g of goals) {
     const m = targetModule(g);
     const s = { ...m.defaults };
@@ -210,17 +233,20 @@ async function score(places, opts) {
         d.setHours(h, mi, 0, 0);
         field = await transitField(g, { time: d, maxMinutes: s.distance * 2, fetchImpl: uaFetch });
       } else {
-        field = await osrmField(g.mode, g, pointBox, { n: points.length === 1 ? 2 : 9, fetchImpl: uaFetch });
+        field = await osrmPointsField(g.mode, g, points, { fetchImpl: uaFetch });
       }
-      layers.push({ module: m, settings: s, index: new CommuteIndex(field, g), count: 1 });
+      goalLayers.push({ module: m, settings: s, index: new CommuteIndex(field, g) });
+      layerModules.set(m.id, { module: m, settings: s, count: 1 });
     } catch (e) {
       errors.push({ module: m.id, error: e.message });
     }
   }
 
-  if (errors.some((e) => settings[e.module].required)) throw new Error(`Pflichtmodul nicht geladen: ${JSON.stringify(errors)}`);
+  if (errors.some((e) => settings[e.module]?.required)) throw new Error(`Pflichtmodul nicht geladen: ${JSON.stringify(errors)}`);
+  const layers = [...layerModules.values()]; // Spalten in fester Reihenfolge
+  const graph = opts.walk ? { n: walkNodes } : null;
 
-  const results = points.map((p) => ({ ...p, ...evaluatePoint(p.lat, p.lon, layers) }));
+  const results = points.map((p) => ({ ...p, ...evaluatePoint(p.lat, p.lon, [...byPoint.get(p), ...goalLayers]) }));
   results.sort((a, b) => (b.rank ?? -1) - (a.rank ?? -1));
 
   if (format === 'md') {
@@ -240,7 +266,15 @@ async function score(places, opts) {
       const cells = cols.map((m) => {
         const p = byId.get(m.id);
         if (!p) return '–';
-        const v = !p.hit ? (p.settings.mode === 'far' ? 'weit' : '–') : m.unit !== 'm' ? `${Math.round(p.dist)} ${m.unit}` : fmtDist(p.dist);
+        const v = !p.hit
+          ? p.settings.mode === 'far'
+            ? 'weit'
+            : m.unit === 'min'
+              ? `> ${p.settings.distance * 2} min`
+              : '–'
+          : m.unit !== 'm'
+            ? `${Math.round(p.dist)} ${m.unit}`
+            : fmtDist(p.dist);
         return `${p.satisfied ? '✅' : p.required ? '❌' : '⚠️'} ${v}`;
       });
       lines.push(`| ${i + 1} | ${link} | **${r.score == null ? 'raus' : Math.round(r.score * 100) + ' %'}** | ${r.rent ?? ''} | ${ppsqm ? ppsqm.toFixed(1) : ''} | ${cells.join(' | ')} |`);
@@ -295,7 +329,7 @@ async function score(places, opts) {
           : `${fmtDist(p.dist)} ${dim(`(${Math.max(1, Math.round(p.dist / WALK_SPEED_M_PER_MIN))} min)`)}`
         : p.settings.mode === 'far'
           ? dim('weit weg')
-          : c('31', isMin ? 'zu weit' : 'keiner');
+          : c('31', isMin ? `> ${p.settings.distance * 2} ${p.module.unit}` : 'keiner');
       const goal = dim(`${p.settings.mode === 'far' ? '≥' : '≤'} ${isMin ? `${p.settings.distance} ${p.module.unit}` : fmtDist(p.settings.distance)}`);
       const name = p.hit?.item.tags?.name && !isMin ? dim(p.hit.item.tags.name) : '';
       console.log(`   ${icon} ${pad(p.module.name, 30)} ${pad(d, 22)} ${pad(goal, 12)} ${name}`);

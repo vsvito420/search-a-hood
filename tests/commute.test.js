@@ -85,3 +85,21 @@ test('transitReach: Parameter, Deduplizierung pro Haltestelle', async () => {
   assert.match(url, /maxTravelTime=30/);
   assert.deepEqual(r.map((x) => [x.name, x.minutes]), [['Kotti', 9], ['Hbf', 20]]);
 });
+
+test('osrmPointsField: exakte Zeiten je Punkt, Chunking ab 99 Punkten', async () => {
+  const { osrmPointsField } = await import('../src/core/commute.js');
+  const urls = [];
+  const fetchImpl = async (u) => {
+    urls.push(u);
+    const n = u.split('/driving/')[1].split('?')[0].split(';').length;
+    return { ok: true, json: async () => ({ code: 'Ok', durations: [Array.from({ length: n }, (_, i) => (i === 5 ? null : i * 60))] }) };
+  };
+  const pts = Array.from({ length: 120 }, (_, i) => ({ lat: 52 + i / 1000, lon: 13 }));
+  const f = await osrmPointsField('foot', { lat: 52.5, lon: 13.4 }, pts, { fetchImpl });
+  assert.equal(urls.length, 2);
+  assert.match(urls[0], /routed-foot/);
+  assert.equal(f.minutesAt(pts[0].lat, pts[0].lon), 1);
+  assert.equal(f.minutesAt(pts[4].lat, pts[4].lon), Infinity, 'null = nicht routbar');
+  assert.equal(f.minutesAt(pts[100].lat, pts[100].lon), 2);
+  assert.equal(f.minutesAt(0, 0), Infinity);
+});

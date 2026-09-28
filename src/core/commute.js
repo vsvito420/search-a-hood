@@ -82,6 +82,30 @@ export async function osrmField(mode, target, bbox, { n = 9, fetchImpl = globalT
 }
 
 /**
+ * Exakte Reisezeiten Ziel → einzelne Punkte (für die CLI: Kandidaten statt Raster). Max. 99 Punkte/Anfrage.
+ * @returns {Promise<{minutesAt(lat, lon): number}>}
+ */
+export async function osrmPointsField(mode, target, points, { fetchImpl = globalThis.fetch, signal } = {}) {
+  const profile = COMMUTE_MODES[mode]?.profile;
+  if (!profile) throw new Error(`Unbekannter Modus ${mode}`);
+  const key = (lat, lon) => `${lat.toFixed(5)},${lon.toFixed(5)}`;
+  const minutes = new Map();
+  for (let i = 0; i < points.length; i += 99) {
+    const chunk = points.slice(i, i + 99);
+    const coords = [target, ...chunk].map((p) => `${p.lon.toFixed(5)},${p.lat.toFixed(5)}`).join(';');
+    const res = await fetchImpl(`${OSRM}/${profile}/table/v1/driving/${coords}?sources=0`, { signal });
+    if (!res.ok) throw new Error(`OSRM HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.code !== 'Ok') throw new Error(`OSRM: ${json.message || json.code}`);
+    chunk.forEach((p, j) => {
+      const sec = json.durations[0][j + 1];
+      minutes.set(key(p.lat, p.lon), sec == null ? Infinity : sec / 60);
+    });
+  }
+  return { minutesAt: (lat, lon) => minutes.get(key(lat, lon)) ?? Infinity };
+}
+
+/**
  * Transitous one-to-all: alle Haltestellen, die ab (bzw. mit arriveBy: bis) `time` in ≤ maxMinutes erreichbar sind.
  * @returns {Promise<{lat:number, lon:number, name:string, minutes:number}[]>}
  */
