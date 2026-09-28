@@ -21,6 +21,7 @@ import { createPalette } from './ui/palette.js';
 import { buildReportHtml, openReport } from './ui/report.js';
 import { osrmField, transitField, transitReach, CommuteIndex, COMMUTE_MODES } from './core/commute.js';
 import { ShareField, ShareIndex } from './core/share.js';
+import { scorePlaces } from './core/places.js';
 
 if (!window.L) {
   document.getElementById('status').textContent = 'Kartenbibliothek (Leaflet) konnte nicht geladen werden – Netzwerk/Adblocker prüfen und neu laden.';
@@ -50,6 +51,7 @@ const state = {
   lastClick: null,
   candidates: sanitize({ candidates: store.get('candidates', []) }).candidates,
   candSort: { key: 'score', dir: -1 },
+  candEval: null, // Einzelbewertung: {byKey: Map(lat,lon → ev), modules: Modul[]} – unabhängig von der Heatmap
   focusModule: null, // Heatmap nur für ein Kriterium
   relative: store.get('relative', false),
 };
@@ -482,6 +484,8 @@ async function analyze(bbox) {
 
 let pending = null;
 async function onSettingsChanged() {
+  // Einzelbewertung passt nicht mehr zu den Einstellungen → verwerfen (Button „einzeln bewerten“ erneut)
+  if (state.candEval) (state.candEval = null), renderCandidates();
   if (!state.bbox) return renderCandidates();
   await fetchMissing();
   scheduleRebuild();
@@ -860,12 +864,45 @@ function candidateIcon(i, score) {
   });
 }
 
+const candKey = (c) => `${c.lat.toFixed(6)},${c.lon.toFixed(6)}`;
 function candidateRows() {
   return state.candidates.map((cand, idx) => {
-    const ev = cand.lat != null && state.layers.size && inBbox(state.bbox, cand.lat, cand.lon) ? evaluate(cand.lat, cand.lon) : undefined;
+    if (cand.lat == null) return { cand, idx };
+    // Live aus der Heatmap-Analyse, sonst aus der Einzelbewertung
+    const live = state.layers.size && inBbox(state.bbox, cand.lat, cand.lon);
+    const ev = live ? evaluate(cand.lat, cand.lon) : state.candEval?.byKey.get(candKey(cand));
     return { cand, idx, ev };
   });
 }
+
+/** Alle Kandidaten einzeln bewerten – gleicher Kern wie die CLI (räumlich gruppiert, kleine Abfragen). */
+async function scoreCandidates() {
+  const places = state.candidates.filter((c) => c.lat != null);
+  if (!places.length) return setStatus('Keine geocodierten Kandidaten.', true);
+  if (!enabledModules().length) return setStatus('Aktiviere mindestens ein Modul.', true);
+  const btn = $('#cand-score');
+  btn.disabled = true;
+  try {
+    const res = await scorePlaces(
+      places.map((c) => ({ lat: c.lat, lon: c.lon })),
+      { modules: enabledModules(), settings: state.settings, time: state.time, walk: state.distMode === 'walk', run: runQuery, onProgress: (m) => setStatus(m) },
+    );
+    const byKey = new Map(res.results.map(({ point, ev }) => [candKey(point), ev]));
+    state.candEval = { byKey, modules: [...res.modules.values()].map((u) => u.module) };
+    renderCandidates();
+    showTab('candidates');
+    setStatus(
+      `⚖ ${places.length} Kandidaten in ${res.groups} Gebiet${res.groups > 1 ? 'en' : ''} bewertet` +
+        (res.errors.length ? ` · ⚠ ${res.errors.map((e) => e.error).join('; ')}` : ''),
+      !!res.errors.length,
+    );
+  } catch (e) {
+    setStatus(`Einzelbewertung fehlgeschlagen: ${e.message}`, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+$('#cand-score').addEventListener('click', scoreCandidates);
 
 function renderCandidates() {
   const rows = candidateRows();
@@ -878,7 +915,7 @@ function renderCandidates() {
   renderCandidateTable($('#cand-table'), rows, {
     sortKey: key,
     sortDir: dir,
-    activeModules: [...state.layers.values()].map((l) => l.module),
+    activeModules: state.layers.size ? [...state.layers.values()].map((l) => l.module) : state.candEval?.modules || [],
     onSort(k) {
       state.candSort = { key: k, dir: state.candSort.key === k ? -state.candSort.dir : k === 'score' ? -1 : 1 };
       renderCandidates();
@@ -887,7 +924,7 @@ function renderCandidates() {
       const c = state.candidates[i];
       if (c.lat == null) return;
       map.setView([c.lat, c.lon], Math.max(map.getZoom(), 16));
-      if (state.layers.size) showReport(L.latLng(c.lat, c.lon));
+      openCandidateReport(c);
     },
     onDelete(i) {
       state.candidates.splice(i, 1);
@@ -901,9 +938,21 @@ function renderCandidates() {
     if (c.lat == null) continue;
     L.marker([c.lat, c.lon], { icon: candidateIcon(idx, ev ? ev.score : null), zIndexOffset: 1000 })
       .bindTooltip(`${idx + 1}. ${esc(c.label)}${ev ? ` · ${ev.score == null ? '✘' : Math.round(ev.score * 100) + ' %'}` : ''}`)
-      .on('click', () => (state.layers.size ? showReport(L.latLng(c.lat, c.lon)) : null))
+      .on('click', () => openCandidateReport(c))
       .addTo(candLayer);
   }
+}
+
+/** Report für einen Kandidaten: live aus der Heatmap oder aus der Einzelbewertung. */
+function openCandidateReport(c) {
+  const latlng = L.latLng(c.lat, c.lon);
+  if (state.layers.size && inBbox(state.bbox, c.lat, c.lon)) return showReport(latlng);
+  const ev = state.candEval?.byKey.get(candKey(c));
+  if (!ev) return setStatus('Noch nicht bewertet – „⚖ Alle einzeln bewerten“ oder Gebiet analysieren.');
+  L.popup({ maxWidth: 380 })
+    .setLatLng(latlng)
+    .setContent(`<p class="hint">${esc(c.display || c.label)} · Einzelbewertung</p>${reportPopup(ev, latlng)}`)
+    .openOn(map);
 }
 
 function addCandidateAt(latlng) {
@@ -950,6 +999,11 @@ $('#cand-fit').addEventListener('click', () => {
     [bbox.south, bbox.west],
     [bbox.north, bbox.east],
   ]);
+  // Über die ganze Stadt verteilt? Dann keine Heatmap, sondern Einzelbewertung
+  if (bboxAreaKm2(bbox) > MAX_AREA_KM2) {
+    setStatus('Kandidaten liegen zu weit auseinander für eine Heatmap – bewerte einzeln …');
+    return scoreCandidates();
+  }
   analyze(bbox);
 });
 

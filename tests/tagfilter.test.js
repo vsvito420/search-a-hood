@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSelector, matchClauses, compileSelectors, isValidSelector } from '../src/core/tagfilter.js';
+import { parseSelector, matchClauses, isValidSelector } from '../src/core/tagfilter.js';
 import { buildCombinedQuery, classify } from '../src/core/overpass.js';
 import { DataStore } from '../src/core/datastore.js';
 import { BUILTIN_MODULES } from '../src/modules/index.js';

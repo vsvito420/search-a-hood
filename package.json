@@ -15,6 +15,7 @@
     "test": "node --test",
     "test:e2e": "node tests/e2e/smoke.mjs",
     "bench": "node scripts/bench.mjs",
+    "lint": "npx --yes eslint@9 .",
     "cli": "node bin/search-a-hood.mjs"
   },
   "license": "MIT"

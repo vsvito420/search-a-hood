@@ -11,20 +11,12 @@ import { parseArgs } from 'node:util';
 import { readFileSync } from 'node:fs';
 import { BUILTIN_MODULES, targetModule } from '../src/modules/index.js';
 import { PRESETS } from '../src/presets.js';
-import { DataStore } from '../src/core/datastore.js';
 import { runQuery } from '../src/core/overpass.js';
-import { evaluatePoint, searchRadius } from '../src/core/analyzer.js';
-import { SpatialIndex } from '../src/core/spatial-index.js';
-import { elementsToPoints } from '../src/core/overpass.js';
-import { padBbox, bboxAreaKm2 } from '../src/core/geo.js';
-
-const MAX_GROUP_KM2 = 25; // größere Gebiete werden auf mehrere kleine Overpass-Abfragen verteilt
-import { isOpenAt } from '../src/core/hours.js';
-import { WalkGraph, NetworkField, buildWalkQuery, WALK_SPEED_M_PER_MIN } from '../src/core/routing.js';
+import { WALK_SPEED_M_PER_MIN } from '../src/core/routing.js';
 import { createGeocoder, parseCandidateLines, pricePerSqm } from '../src/core/candidates.js';
 import { scoreColor } from '../src/core/scoring.js';
-import { osrmPointsField, transitField, CommuteIndex, COMMUTE_MODES } from '../src/core/commute.js';
-import { ShareField, ShareIndex } from '../src/core/share.js';
+import { COMMUTE_MODES } from '../src/core/commute.js';
+import { scorePlaces } from '../src/core/places.js';
 
 const UA = 'search-a-hood-cli (+https://github.com/vsvito420/search-a-hood)';
 // Alle Dienste mit eigenem User-Agent ansprechen (Transitous blockt z. B. Nodes Standard-UA „node“)
@@ -152,101 +144,19 @@ async function score(places, opts) {
     Object.assign(g, await locate(g.addr, geocode));
   }
 
-  // Punkte räumlich gruppieren: pro Gruppe EIN kleines Gebiet (statt einer riesigen Box über die ganze Stadt)
-  const radius = Math.min(2000, Math.max(200, ...mods.map((m) => (m.geometry === 'area' ? (m.shareRadius || 300) + 50 : searchRadius(settings[m.id])))));
-  const boxOf = (pts) =>
-    padBbox(
-      { south: Math.min(...pts.map((p) => p.lat)), north: Math.max(...pts.map((p) => p.lat)), west: Math.min(...pts.map((p) => p.lon)), east: Math.max(...pts.map((p) => p.lon)) },
-      radius + 200,
-    );
-  const groups = [];
-  for (const p of points) {
-    const g = groups.find((grp) => bboxAreaKm2(boxOf([...grp, p])) <= MAX_GROUP_KM2);
-    if (g) g.push(p);
-    else groups.push([p]);
-  }
-  if (groups.length > 1) log(`🗂  ${points.length} Adressen in ${groups.length} Gebieten`);
-
+  // Gemeinsamer Kern mit der Web-App: räumlich gruppieren, je Gruppe eine kleine Abfrage, Ziele exakt je Ort
   const endpoints = opts.overpass || process.env.OVERPASS_URL ? [opts.overpass || process.env.OVERPASS_URL] : undefined;
   const run = (q, o) => runQuery(q, { ...o, endpoints, fetchImpl: uaFetch });
-  const errors = [];
-  const layerModules = new Map(); // für Spalten/JSON: alle Module, die irgendwo Daten hatten
-  const byPoint = new Map(); // Punkt → Layer seiner Gruppe
-  let walkNodes = 0;
-
-  for (const [gi, grp] of groups.entries()) {
-    const bbox = boxOf(grp);
-    const tag = groups.length > 1 ? ` [Gebiet ${gi + 1}/${groups.length}]` : '';
-    const store = new DataStore({ run });
-    store.setArea(bbox);
-    await store.ensure(mods, { onProgress: (m) => log(m + tag) });
-
-    let graph = null;
-    if (opts.walk) {
-      log(`🚶 Lade Fußwegenetz …${tag}`);
-      graph = new WalkGraph(await run(buildWalkQuery(bbox), { timeoutMs: 180_000 }));
-      walkNodes += graph.n;
-      log(`   ${graph.n.toLocaleString('de')} Knoten, ${graph.edgeCount.toLocaleString('de')} Kanten`);
-    }
-
-    const layers = [];
-    for (const m of mods) {
-      const s = settings[m.id];
-      const d = store.get(m.id);
-      if (!d || d.error) {
-        errors.push({ module: m.id, error: `${d?.error || 'keine Daten'}${tag}` });
-        continue;
-      }
-      const els = d.elements.filter((el) => {
-        el.tags ||= {};
-        if (m.filter && !m.filter(el, { time, isOpenAt })) return false;
-        if (m.supportsHours && s.openAtTime) return isOpenAt(el.tags.opening_hours, time) === true;
-        return true;
-      });
-      layerModules.set(m.id, { module: m, settings: s, count: (layerModules.get(m.id)?.count || 0) + els.length });
-      if (m.geometry === 'area') {
-        const f = new ShareField(els, bbox, m.shareRadius || 300);
-        layers.push({ module: m, settings: s, index: new ShareIndex(f, `${f.polygons} Flächen`) });
-        continue;
-      }
-      const pts = elementsToPoints(els, m.geometry);
-      const useNet = graph && m.geometry !== 'line' && s.mode !== 'far' && (s.minCount || 1) === 1;
-      layers.push({ module: m, settings: s, index: useNet ? new NetworkField(graph, pts, searchRadius(s)) : new SpatialIndex(pts) });
-    }
-    for (const p of grp) byPoint.set(p, layers);
-  }
-
-  // Pendel-Ziele: exakte Reisezeiten zu jedem Kandidaten (OSRM) bzw. Haltestellen-Feld (Transitous)
-  const goalLayers = [];
-  for (const g of goals) {
-    const m = targetModule(g);
-    const s = { ...m.defaults };
-    settings[m.id] = s;
-    log(`${COMMUTE_MODES[g.mode].icon} Reisezeiten zu „${g.name}“ …`);
-    try {
-      let field;
-      if (g.mode === 'transit') {
-        const d = new Date();
-        d.setDate(d.getDate() + 1);
-        while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
-        const [h, mi] = g.arrive.split(':').map(Number);
-        d.setHours(h, mi, 0, 0);
-        field = await transitField(g, { time: d, maxMinutes: s.distance * 2, fetchImpl: uaFetch });
-      } else {
-        field = await osrmPointsField(g.mode, g, points, { fetchImpl: uaFetch });
-      }
-      goalLayers.push({ module: m, settings: s, index: new CommuteIndex(field, g) });
-      layerModules.set(m.id, { module: m, settings: s, count: 1 });
-    } catch (e) {
-      errors.push({ module: m.id, error: e.message });
-    }
-  }
-
+  const goalMods = goals.map((g) => targetModule(g));
+  for (const m of goalMods) settings[m.id] = { ...m.defaults };
+  const scored = await scorePlaces(points, { modules: [...mods, ...goalMods], settings, time, walk: !!opts.walk, run, fetchImpl: uaFetch, onProgress: log });
+  if (scored.groups > 1) log(`🗂  ${points.length} Adressen in ${scored.groups} Gebieten abgefragt`);
+  const errors = scored.errors;
   if (errors.some((e) => settings[e.module]?.required)) throw new Error(`Pflichtmodul nicht geladen: ${JSON.stringify(errors)}`);
-  const layers = [...layerModules.values()]; // Spalten in fester Reihenfolge
-  const graph = opts.walk ? { n: walkNodes } : null;
+  const layers = [...scored.modules.values()]; // Spalten in fester Reihenfolge
+  const graph = opts.walk ? { n: scored.walkNodes } : null;
 
-  const results = points.map((p) => ({ ...p, ...evaluatePoint(p.lat, p.lon, [...byPoint.get(p), ...goalLayers]) }));
+  const results = scored.results.map(({ point, ev }) => ({ ...point, ...ev }));
   results.sort((a, b) => (b.rank ?? -1) - (a.rank ?? -1));
 
   if (format === 'md') {

@@ -81,6 +81,16 @@ export async function osrmField(mode, target, bbox, { n = 9, fetchImpl = globalT
   return new GridField(bbox, n, values);
 }
 
+/** Nächster Werktag zur Uhrzeit hh:mm (lokal) – Referenz für ÖPNV-Ankunft. */
+export function nextWorkday(hhmm = '08:30', from = new Date()) {
+  const [h, mi] = String(hhmm).split(':').map(Number);
+  const d = new Date(from);
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  d.setHours(h || 8, mi || 0, 0, 0);
+  return d;
+}
+
 /**
  * Exakte Reisezeiten Ziel → einzelne Punkte (für die CLI: Kandidaten statt Raster). Max. 99 Punkte/Anfrage.
  * @returns {Promise<{minutesAt(lat, lon): number}>}
