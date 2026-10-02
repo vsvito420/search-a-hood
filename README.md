@@ -65,6 +65,7 @@ npm test             # Unit-Tests (node:test)
 3. **A** drücken oder „Sichtbares Gebiet analysieren“ klicken
 4. Die Karte bewegst du frei, ein Klick öffnet nichts. Den **Standort-Report** öffnest du mit **Rechtsklick** oder **langem Tippen**, oder im 🎯-**Prüfmodus** (Taste <kbd>P</kbd>) mit einem normalen Klick. „📄 Steckbrief“ öffnet die druckbare Version.
 5. **Auf dem Handy** verhält sich die App wie Apple Karten: Die Karte füllt den Bildschirm, alles andere liegt in einem **Bottom Sheet** mit Griff. Du kannst es auf drei Höhen ziehen oder den Griff antippen. Der Report öffnet im Sheet statt als Popup über der Karte. Mit ✕ schließt du ihn, und die Karte ist wieder frei. „🏆 Top-Lagen“ ist eine einklappbare Pille. Hell- und Dunkelmodus folgen dem System. Über „Zum Home-Bildschirm“ läuft die App randlos.
+6. **⚡ Cyber-Modus** (Blitz-Knopf oder Taste <kbd>C</kbd>): eine Neon-Karte mit leuchtenden Markern, Raster und Scanlines, dazu eine passende Terminal-Oberfläche. Die Wahl wird gespeichert. Alle Grundkarten (Standard, Hell, Dunkel, Cyber) nutzen OSM-Kacheln mit CSS-Filtern und brauchen keinen API-Key.
 5. Für mehr Kartenfläche klappst du die Seitenleiste mit dem Panel-Symbol oder <kbd>B</kbd> ein.
 
 Grün heißt, die Lage passt. Rot heißt, sie passt nicht. Grau heißt, ein Pflichtkriterium ist verletzt.
@@ -93,6 +94,7 @@ index.html?at=52.4986,13.418&z=16&walk=1&time=2026-10-02T23:00&run=1
 | <kbd>P</kbd> | Prüfmodus: Klick auf die Karte öffnet den Report |
 | Rechtsklick / lange tippen | Standort-Report (immer) |
 | <kbd>B</kbd> | Seitenleiste ein-/ausklappen |
+| <kbd>C</kbd> | ⚡ Cyber-Karte: Neon, Glow, Scanlines |
 | <kbd>/</kbd> | Adresssuche |
 | <kbd>1</kbd>–<kbd>4</kbd> | Tabs |
 | <kbd>Shift</kbd>+Klick | Kandidat an dieser Stelle anlegen |

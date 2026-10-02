@@ -101,20 +101,38 @@ const dataModules = () => enabledModules().filter((m) => m.kind !== 'target');
 const view = fromLink?.view || store.get('view', { center: [52.52, 13.405], zoom: 14 });
 if (!Array.isArray(view.center) && view.center) view.center = [view.center.lat, view.center.lng];
 const map = L.map('map', { preferCanvas: true, zoomControl: false, tapHold: true }).setView(view.center, view.zoom);
-const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-}).addTo(map);
-const light = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  maxZoom: 20,
-  attribution: '© OpenStreetMap, © CARTO',
-});
-const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-  maxZoom: 20,
-  attribution: '© OpenStreetMap, © CARTO',
-});
+// Alle Grundkarten nutzen die OSM-Standardkacheln (kein API-Key nötig – CARTO verlangt inzwischen einen).
+// Hell, Dunkel und Cyber entstehen per CSS-Filter (.tiles-light/.tiles-dark/.cyber-tiles in styles.css).
+const osmTiles = (className) =>
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    className,
+  });
+const osm = osmTiles('').addTo(map);
+const light = osmTiles('tiles-light');
+const dark = osmTiles('tiles-dark');
+const cyber = osmTiles('cyber-tiles');
 L.control.zoom({ position: 'bottomright' }).addTo(map);
-L.control.layers({ 'OSM Standard': osm, 'Hell (CARTO)': light, 'Dunkel (CARTO)': dark }, {}, { position: 'bottomright' }).addTo(map);
+L.control.layers({ 'OSM Standard': osm, 'Hell (grau)': light, Dunkel: dark, '⚡ Cyber': cyber }, {}, { position: 'bottomright' }).addTo(map);
+let baseBeforeCyber = osm;
+/** Cyber-Modus: Neon-Karte + passende UI (body.cyber). Merkt sich die vorige Grundkarte. */
+function setCyber(on) {
+  document.body.classList.toggle('cyber', on);
+  document.getElementById('cyber-btn')?.setAttribute('aria-pressed', String(on));
+  store.set('cyber', on);
+  const bases = [osm, light, dark, cyber];
+  if (on && !map.hasLayer(cyber)) {
+    baseBeforeCyber = bases.find((b) => map.hasLayer(b)) || osm;
+    bases.forEach((b) => map.removeLayer(b));
+    cyber.addTo(map);
+  } else if (!on && map.hasLayer(cyber)) {
+    map.removeLayer(cyber);
+    (baseBeforeCyber === cyber ? osm : baseBeforeCyber).addTo(map);
+  }
+}
+map.on('baselayerchange', (e) => setCyber(e.layer === cyber));
+if (store.get('cyber', false)) setCyber(true);
 L.control.scale({ imperial: false }).addTo(map);
 map.on('moveend', () => store.set('view', { center: map.getCenter(), zoom: map.getZoom() }));
 if (fromLink) history.replaceState(null, '', location.pathname + location.search);
@@ -1364,6 +1382,7 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'b') $('#sidebar-btn').click();
   else if (k === 't') toggleTimeline();
   else if (k === 'h') checkHere();
+  else if (k === 'c') setCyber(!document.body.classList.contains('cyber'));
   else if (k === ' ' && !tl.el.hidden) (e.preventDefault(), togglePlay());
   else if (k === 'escape') (map.closePopup(), closeSheetReport());
   else if (/^[1-4]$/.test(k)) showTab(['criteria', 'candidates', 'layers', 'dev'][+k - 1]);
@@ -1413,6 +1432,7 @@ function checkHere() {
   );
 }
 $('#here-btn').addEventListener('click', checkHere);
+$('#cyber-btn').addEventListener('click', () => setCyber(!document.body.classList.contains('cyber')));
 
 // ---------- Deep-Links: ?addr=…&at=lat,lon&z=16&preset=informatiker&walk=1&time=2026-10-02T23:00&run=1
 async function applyQueryParams() {

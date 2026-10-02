@@ -590,3 +590,82 @@ details { background: var(--panel); border-radius: 12px; padding: 12px; }
   #toolbar > .icon-btn.primary { width: 50px; height: 46px; }
   body.sidebar-collapsed #sidebar { display: flex; }
 }
+
+/* =====================================================================
+   ⚡ Cyber-Modus (Taste C): Neon-Karte, Glow, Scanlines, Terminal-UI
+   ===================================================================== */
+/* OSM invertiert → Cyan/Teal-Neon; Straßen leuchten, Flächen werden fast schwarz */
+.cyber-tiles { filter: invert(1) grayscale(1) brightness(0.95) contrast(1.8) sepia(1) hue-rotate(140deg) saturate(3.5); }
+.tiles-light { filter: grayscale(1) brightness(1.08) contrast(0.9); }
+.tiles-dark { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.6); }
+
+body.cyber {
+  --bg: #04060b;
+  --panel: #0a0f18;
+  --fill: rgba(0, 240, 255, 0.08);
+  --fill-2: rgba(0, 240, 255, 0.22);
+  --text: #d8fbff;
+  --muted: rgba(150, 220, 235, 0.6);
+  --border: rgba(0, 240, 255, 0.22);
+  --accent: #00f0ff;
+  --accent-contrast: #001014;
+  --material: rgba(6, 10, 18, 0.8);
+  --sheet-solid: #070b13;
+  --neon-2: #ff2bd6;
+  --shadow: 0 0 0 1px rgba(0, 240, 255, 0.25), 0 0 18px rgba(0, 240, 255, 0.15), 0 8px 24px rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
+  background: var(--bg);
+  color: var(--text);
+}
+body.cyber #map { background: #02040a; }
+body.cyber h1, body.cyber h2, body.cyber #status, body.cyber .leaflet-control-attribution, body.cyber .results-head,
+body.cyber .report b, body.cyber .score, body.cyber .tl-days, body.cyber #tl-label {
+  font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+body.cyber h1 { color: var(--accent); text-shadow: 0 0 8px rgba(0, 240, 255, 0.7), 0 0 22px rgba(255, 43, 214, 0.35); }
+body.cyber h2 { color: var(--neon-2); text-shadow: 0 0 6px rgba(255, 43, 214, 0.5); }
+body.cyber a { color: var(--accent); }
+
+/* Marker (Canvas) und Heatmap glühen */
+body.cyber .leaflet-overlay-pane canvas {
+  filter: saturate(1.6) brightness(1.15) drop-shadow(0 0 3px rgba(0, 240, 255, 0.85)) drop-shadow(0 0 8px rgba(255, 43, 214, 0.45));
+}
+body.cyber .heatmap { mix-blend-mode: screen; filter: opacity(0.55) hue-rotate(40deg) saturate(1.6); }
+body.cyber .pin-icon span { filter: drop-shadow(0 0 6px var(--neon-2)) drop-shadow(0 0 14px var(--neon-2)); }
+
+/* Scanlines + Raster + Vignette über der Karte (klickdurchlässig) */
+body.cyber #map::after {
+  content: ''; position: absolute; inset: 0; z-index: 450; pointer-events: none;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px),
+    linear-gradient(rgba(0, 240, 255, 0.05) 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(90deg, rgba(0, 240, 255, 0.05) 1px, transparent 1px) 0 0 / 48px 48px,
+    radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.55) 100%);
+  animation: cyber-flicker 6s infinite steps(1);
+}
+@keyframes cyber-flicker { 0%, 100% { opacity: 1; } 97% { opacity: 0.85; } 98% { opacity: 1; } 99% { opacity: 0.9; } }
+@media (prefers-reduced-motion: reduce) { body.cyber #map::after { animation: none; } }
+
+/* Neon-Kanten an allem, was schwebt */
+body.cyber .tb-group, body.cyber #status, body.cyber #results, body.cyber #timeline, body.cyber .leaflet-bar a,
+body.cyber .leaflet-control-layers, body.cyber .leaflet-popup-content-wrapper {
+  box-shadow: var(--shadow) !important;
+}
+body.cyber #analyze-btn {
+  background: linear-gradient(135deg, #00f0ff, #ff2bd6) !important; color: #02040a;
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.7), 0 0 30px rgba(255, 43, 214, 0.4) !important;
+}
+body.cyber #cyber-btn[aria-pressed='true'] { color: var(--neon-2); filter: drop-shadow(0 0 6px var(--neon-2)); }
+body.cyber .leaflet-control-attribution { background: rgba(2, 4, 10, 0.7) !important; color: var(--muted); }
+body.cyber .leaflet-control-attribution a { color: var(--accent); }
+body.cyber .leaflet-bar a, body.cyber .leaflet-control-layers { color: var(--accent); }
+body.cyber #sidebar { box-shadow: 0 0 0 1px var(--border), 0 0 24px rgba(0, 240, 255, 0.12); }
+body.cyber input, body.cyber select, body.cyber textarea { color: var(--text); }
+
+/* Ebenen-Knopf: eigenes SVG in Akzentfarbe statt Leaflets dunklem PNG (auf Glas/Dunkel unsichtbar) */
+.leaflet-control-layers-toggle { background-image: none !important; position: relative; }
+.leaflet-control-layers-toggle::before {
+  content: ''; position: absolute; inset: 0; margin: auto; width: 22px; height: 22px; background: var(--accent);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m12 2 10 5-10 5L2 7z'/%3E%3Cpath d='m2 17 10 5 10-5M2 12l10 5 10-5'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m12 2 10 5-10 5L2 7z'/%3E%3Cpath d='m2 17 10 5 10-5M2 12l10 5 10-5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
