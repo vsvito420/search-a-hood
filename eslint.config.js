@@ -1,6 +1,6 @@
 // Schlanke Lint-Konfiguration ohne Plugins: `npx eslint@9 .` (läuft auch in der CI)
 const browser = Object.fromEntries(
-  'window document L localStorage indexedDB ResizeObserver navigator location history performance requestAnimationFrame cancelAnimationFrame FormData Blob DOMParser MouseEvent Event TextEncoder TextDecoder btoa atob prompt'
+  'window document L localStorage indexedDB ResizeObserver matchMedia innerHeight innerWidth addEventListener getComputedStyle navigator location history performance requestAnimationFrame cancelAnimationFrame FormData Blob DOMParser MouseEvent Event TextEncoder TextDecoder btoa atob prompt'
     .split(' ')
     .map((g) => [g, 'readonly']),
 );

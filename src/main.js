@@ -23,6 +23,7 @@ import { OverlayManager } from './ui/overlays.js';
 import { renderCandidateTable, sortValue } from './ui/candidates.js';
 import { createPalette } from './ui/palette.js';
 import { applyIcons } from './ui/icons.js';
+import { createSheet } from './ui/sheet.js';
 import { buildReportHtml, openReport } from './ui/report.js';
 import { osrmField, transitField, transitReach, CommuteIndex, COMMUTE_MODES, nextWorkday } from './core/commute.js';
 import { ShareField, ShareIndex } from './core/share.js';
@@ -148,7 +149,16 @@ function showTab(name) {
   for (const p of document.querySelectorAll('[data-panel]')) p.hidden = p.dataset.panel !== name;
   store.set('tab', name);
 }
-tabs.forEach((t) => t.addEventListener('click', () => showTab(t.dataset.tab)));
+// Mobil: Seitenleiste als Bottom Sheet (Apple-Karten-Stil)
+const sheet = createSheet($('#sidebar'), $('#sheet-handle'), {
+  onChange: () => map && setTimeout(() => map.invalidateSize({ pan: false }), 0),
+});
+tabs.forEach((t) =>
+  t.addEventListener('click', () => {
+    showTab(t.dataset.tab);
+    sheet.expand('half'); // Tab antippen im eingeklappten Sheet → Inhalt zeigen
+  }),
+);
 showTab(store.get('tab', 'criteria'));
 
 // Zeitpunkt
@@ -309,7 +319,14 @@ relBox.addEventListener('change', () => {
   if (state.lastResult) drawHeatmap(state.lastResult);
 });
 $('#analyze-btn').addEventListener('click', () => analyze());
-$('#results-close').addEventListener('click', () => ($('#results').hidden = true));
+// Top-Lagen ein-/ausklappen (mobil standardmäßig eingeklappt, damit die Karte frei bleibt)
+function setResultsCollapsed(c) {
+  $('#results').classList.toggle('collapsed', c);
+  $('#results-toggle').setAttribute('aria-expanded', String(!c));
+  store.set('resultsCollapsed', c);
+}
+setResultsCollapsed(store.get('resultsCollapsed', matchMedia('(max-width: 800px)').matches));
+$('#results-toggle').addEventListener('click', () => setResultsCollapsed(!$('#results').classList.contains('collapsed')));
 $('#iso-btn').addEventListener('click', () => drawIsochrone());
 // Karte frei bewegen: Ein normaler Klick/Tipp öffnet nichts. Report per Rechtsklick / langem Tippen
 // (Leaflet meldet beides als „contextmenu“) oder im Prüfmodus per Klick.
@@ -691,7 +708,12 @@ function drawMarkers(m, s, elements) {
       L.circle([lat, lon], { radius: s.distance, color: '#d7301f', weight: 1, fillOpacity: 0.08, interactive: false }).addTo(group);
     }
     L.circleMarker([lat, lon], { radius: 5, color: '#fff', weight: 1, fillColor: m.color, fillOpacity: 0.95 })
-      .bindPopup(() => poiPopup(m, el, state.time))
+      .on('click', (ev) => {
+        L.DomEvent.stopPropagation(ev);
+        const box = document.createElement('div');
+        box.innerHTML = poiPopup(m, el, state.time);
+        presentAt(L.latLng(lat, lon), box, m.icon ? `${m.icon} ${m.name}` : m.name);
+      })
       .addTo(group);
   }
   group.addTo(map);
@@ -768,6 +790,46 @@ function evaluate(lat, lon) {
   return evaluatePoint(lat, lon, [...state.layers.values()]);
 }
 
+// ---------- Inhalte zu einem Ort zeigen: Desktop als Popup, mobil im Bottom Sheet ----------
+const pinLayer = L.layerGroup().addTo(map);
+function closeSheetReport() {
+  $('#sheet-report').hidden = true;
+  $('#sheet-report-body').innerHTML = '';
+  pinLayer.clearLayers();
+  document.body.classList.remove('report-open');
+}
+$('#sheet-report-close').addEventListener('click', () => (closeSheetReport(), sheet.set('peek')));
+
+/**
+ * @param {L.LatLng} latlng
+ * @param {HTMLElement} content
+ * @returns {{update: () => void, isOpen: () => boolean}}
+ */
+function presentAt(latlng, content, title = 'Standort-Report') {
+  if (!sheet.isMobile) {
+    const popup = L.popup({ maxWidth: 380 }).setLatLng(latlng).setContent(content).openOn(map);
+    return { update: () => popup.update(), isOpen: () => popup.isOpen() };
+  }
+  map.closePopup();
+  $('#sheet-report h2').textContent = title;
+  const body = $('#sheet-report-body');
+  body.replaceChildren(content);
+  $('#sheet-report').hidden = false;
+  document.body.classList.add('report-open');
+  sheet.expand('half');
+  $('#sidebar').scrollTop = 0;
+  // Pin setzen und den Ort in den freien Kartenbereich über dem Sheet schieben
+  pinLayer.clearLayers();
+  L.marker(latlng, { icon: L.divIcon({ className: 'pin-icon', html: '<span></span>', iconSize: [28, 36], iconAnchor: [14, 34] }), interactive: false }).addTo(pinLayer);
+  requestAnimationFrame(() => {
+    const size = map.getSize();
+    const sheetH = $('#sidebar').getBoundingClientRect().height;
+    const p = map.latLngToContainerPoint(latlng);
+    map.panBy([p.x - size.x / 2, p.y - Math.max(90, (size.y - sheetH) / 2 + 20)], { animate: true });
+  });
+  return { update: () => {}, isOpen: () => body.contains(content) };
+}
+
 async function showReport(latlng) {
   if (!state.layers.size) {
     setStatus('Erst das Gebiet analysieren (🔍 oder Taste A).');
@@ -786,12 +848,15 @@ async function showReport(latlng) {
       <a href="https://www.openstreetmap.org/?mlat=${latlng.lat}&mlon=${latlng.lng}#map=18/${latlng.lat}/${latlng.lng}" target="_blank" rel="noopener">OSM</a>
     </div>
     <div class="fi-wrap"></div>`;
-  const popup = L.popup({ maxWidth: 380 }).setLatLng(latlng).setContent(html).openOn(map);
-  const el = popup.getElement();
+  const el = document.createElement('div');
+  el.className = 'report-wrap';
+  el.innerHTML = html;
+  const popup = presentAt(latlng, el);
   el.querySelector('[data-act="iso"]').addEventListener('click', () => drawIsochrone(latlng));
   el.querySelector('[data-act="transit-iso"]').addEventListener('click', () => drawTransitIsochrone(latlng));
   el.querySelector('[data-act="cand"]').addEventListener('click', () => {
     map.closePopup();
+    closeSheetReport();
     addCandidateAt(latlng);
   });
   el.querySelector('[data-act="report"]').addEventListener('click', () => {
@@ -810,9 +875,15 @@ async function showReport(latlng) {
 // =====================================================================
 // Isochrone
 // =====================================================================
+/** Mobil: Report schließen und Sheet einklappen, damit das Ergebnis auf der Karte sichtbar ist. */
+function revealMap() {
+  map.closePopup();
+  if (sheet.isMobile) (closeSheetReport(), sheet.set('peek'));
+}
+
 async function drawIsochrone(latlng = state.lastClick) {
   if (!latlng) return setStatus('Erst einen Punkt prüfen (Rechtsklick / lange tippen oder 🎯), dann Isochrone.', true);
-  map.closePopup();
+  revealMap();
   // Vorhandenes Netz nutzen, wenn der Punkt mit 15-min-Radius hineinpasst, sonst kleines Gebiet um den Punkt laden.
   const around = padBbox({ south: latlng.lat, west: latlng.lng, north: latlng.lat, east: latlng.lng }, 1300);
   const contains = (slot) => {
@@ -856,7 +927,7 @@ async function drawIsochrone(latlng = state.lastClick) {
  * Zeitpunkt), plus der Fußweg-Radius, der von der Restzeit übrig bleibt.
  */
 async function drawTransitIsochrone(latlng, maxMinutes = 30) {
-  map.closePopup();
+  revealMap();
   const when = state.time < new Date() ? new Date() : state.time;
   setStatus(`🚆 Berechne ÖPNV-Erreichbarkeit ab Abfahrt ${when.toLocaleString('de-DE', { weekday: 'short', hour: '2-digit', minute: '2-digit' })} …`);
   let stops;
@@ -985,10 +1056,10 @@ function openCandidateReport(c) {
   if (state.layers.size && inBbox(state.bbox, c.lat, c.lon)) return showReport(latlng);
   const ev = state.candEval?.byKey.get(candKey(c));
   if (!ev) return setStatus('Noch nicht bewertet – „⚖ Alle einzeln bewerten“ oder Gebiet analysieren.');
-  L.popup({ maxWidth: 380 })
-    .setLatLng(latlng)
-    .setContent(`<p class="hint">${esc(c.display || c.label)} · Einzelbewertung</p>${reportPopup(ev, latlng)}`)
-    .openOn(map);
+  const el = document.createElement('div');
+  el.className = 'report-wrap';
+  el.innerHTML = `<p class="hint">${esc(c.display || c.label)} · Einzelbewertung</p>${reportPopup(ev, latlng)}`;
+  presentAt(latlng, el);
 }
 
 function addCandidateAt(latlng) {
@@ -1294,7 +1365,7 @@ document.addEventListener('keydown', (e) => {
   else if (k === 't') toggleTimeline();
   else if (k === 'h') checkHere();
   else if (k === ' ' && !tl.el.hidden) (e.preventDefault(), togglePlay());
-  else if (k === 'escape') map.closePopup();
+  else if (k === 'escape') (map.closePopup(), closeSheetReport());
   else if (/^[1-4]$/.test(k)) showTab(['criteria', 'candidates', 'layers', 'dev'][+k - 1]);
 });
 

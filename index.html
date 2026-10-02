@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>search-a-hood</title>
   <meta name="description" content="Modulares OSINT-Tool: Finde Wohnlagen, die zu dir passen – auf Basis von OpenStreetMap." />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
@@ -12,8 +12,13 @@
         onerror="this.onerror=null;this.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <meta name="theme-color" content="#1a7f4b" />
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="search-a-hood" />
+  <link rel="apple-touch-icon" href="icon.svg" />
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
@@ -22,6 +27,8 @@
 </head>
 <body>
   <aside id="sidebar">
+    <!-- Griff des Bottom Sheets (nur mobil sichtbar): ziehen oder tippen -->
+    <div id="sheet-handle" class="sheet-handle" role="button" tabindex="0" aria-label="Bereich vergrößern oder verkleinern"><span class="grabber"></span></div>
     <header>
       <div class="row between">
         <h1>search-a-hood</h1>
@@ -41,6 +48,15 @@
       <button role="tab" data-tab="layers" title="Karten-Layer (3)" aria-label="Layer"><i data-icon="layers" data-size="20"></i></button>
       <button role="tab" data-tab="dev" title="Teilen, Export & Entwickler (4)" aria-label="Dev"><i data-icon="code" data-size="20"></i></button>
     </nav>
+
+    <!-- Standort-Report im Sheet (mobil statt Popup über der Karte) -->
+    <section id="sheet-report" hidden>
+      <div class="sheet-report-head">
+        <h2>Standort-Report</h2>
+        <button id="sheet-report-close" class="icon-btn round" type="button" aria-label="Report schließen">✕</button>
+      </div>
+      <div id="sheet-report-body"></div>
+    </section>
 
     <!-- ============ Kriterien ============ -->
     <div class="tab-panel" data-panel="criteria">
@@ -248,8 +264,6 @@
         <button id="timeline-btn" class="icon-btn" type="button" title="Zeitraffer durch die Woche (T)" aria-label="Wochen-Zeitraffer"><i data-icon="calendar"></i></button>
         <button id="here-btn" class="icon-btn" type="button" title="Standort-Check an deiner Position, z. B. bei der Besichtigung (H)" aria-label="Hier prüfen"><i data-icon="locate"></i></button>
       </div>
-      <label class="opacity tb-group" title="Deckkraft der Heatmap"><i data-icon="flame"></i><input id="opacity" type="range" min="0" max="1" step="0.05" value="0.55" aria-label="Deckkraft der Heatmap" />
-        <span class="rel" title="Relative Farbskala: schlechteste sichtbare Lage = rot, beste = grün (R)"><input id="relative" type="checkbox" aria-label="Relative Farbskala" /><i data-icon="contrast" data-size="16"></i></span></label>
     </div>
     <div id="timeline" hidden>
       <button id="tl-play" type="button" aria-label="Abspielen">▶</button>
@@ -273,10 +287,16 @@
       <button id="welcome-close" type="button" class="primary">Los geht's</button>
     </div>
     <div id="results" hidden>
-      <div class="row between"><h3>Top-Lagen</h3><button id="results-close" class="link" type="button" aria-label="schließen">✕</button></div>
-      <ol id="top-list"></ol>
-      <div class="legend"><span id="legend-lo">0 %</span><i></i><span id="legend-hi">100 %</span></div>
-      <p class="hint">Grau = Pflichtkriterium verletzt. Rechtsklick, lange tippen oder 🎯-Modus → Standort-Report.</p>
+      <button id="results-toggle" class="results-head" type="button" aria-expanded="true" aria-controls="results-body">
+        <span>🏆 Top-Lagen</span><span class="chev" aria-hidden="true">⌃</span>
+      </button>
+      <div id="results-body">
+        <ol id="top-list"></ol>
+        <div class="legend"><span id="legend-lo">0 %</span><i></i><span id="legend-hi">100 %</span></div>
+        <label class="opacity" title="Deckkraft der Heatmap"><i data-icon="flame" data-size="16"></i><input id="opacity" type="range" min="0" max="1" step="0.05" value="0.55" aria-label="Deckkraft der Heatmap" />
+          <span class="rel" title="Relative Farbskala: schlechteste sichtbare Lage = rot, beste = grün (R)"><input id="relative" type="checkbox" class="switch small" aria-label="Relative Farbskala" /> relativ</span></label>
+        <p class="hint">Grau = Pflichtkriterium verletzt. Report: lange tippen, Rechtsklick oder 🎯.</p>
+      </div>
     </div>
   </main>
 
