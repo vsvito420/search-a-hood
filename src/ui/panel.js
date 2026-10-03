@@ -29,7 +29,7 @@ function moduleCard(m, s, count, { onChange, onDelete, onFocus, focusId }) {
     <div class="head">
       <label title="${esc(m.description)}">
         <input type="checkbox" data-k="enabled" ${s.enabled ? 'checked' : ''} />
-        <span class="dot"></span><span>${esc(m.name)}</span>
+        <span class="micon" aria-hidden="true">${esc(m.icon || '📍')}</span><span class="mname">${esc(m.name)}</span>
       </label>
       <span class="count" data-count-for="${esc(m.id)}"></span>
       ${s.enabled ? `<button class="eye${focusId === m.id ? ' active' : ''}" type="button" title="Heatmap nur für dieses Kriterium" aria-pressed="${focusId === m.id}">◉</button>` : ''}

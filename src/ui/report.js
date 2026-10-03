@@ -1,4 +1,4 @@
-import { esc, formatDist, fmtValue, walkMin, lostPoints, safeUrl, summarize } from './popups.js';
+import { esc, formatDist, fmtValue, walkMin, lostPoints, safeUrl, summarize, modLabel } from './popups.js';
 import { SpatialIndex } from '../core/spatial-index.js';
 import { elementsToPoints } from '../core/overpass.js';
 import { isOpenAt } from '../core/hours.js';
@@ -36,7 +36,7 @@ export function buildReportHtml(place, ev, layers, { time, distMode }) {
       const goal = `${k > 1 ? `${k}× ` : ''}${p.settings.mode === 'far' ? '≥' : '≤'} ${fmtValue(p.module, p.settings.distance)}`;
       return `<tr>
         <td>${p.satisfied ? '<span class="ok">✔</span>' : p.required ? '<span class="bad">✘</span>' : '<span class="warn">·</span>'}</td>
-        <td><b>${esc(p.module.name)}</b><br><small>${esc(p.module.category)} · Gewicht ${p.weight}${p.required ? ' · Pflicht' : ''}</small></td>
+        <td><b>${esc(modLabel(p.module))}</b><br><small>${esc(p.module.category)} · Gewicht ${p.weight}${p.required ? ' · Pflicht' : ''}</small></td>
         <td>${isMin ? `<small>${esc(p.module.description)}</small>` : p.hit ? esc(labelOf(tags, '–')) : p.settings.mode === 'far' ? '<span class="ok">keins in Reichweite</span>' : '<span class="bad">keins gefunden</span>'}
             ${tags.opening_hours ? `<br><small>${esc(tags.opening_hours)}</small>` : ''}</td>
         <td class="num">${p.hit ? (isMin ? fmtValue(p.module, p.dist) : `${formatDist(p.dist)}<br><small>${walkMin(p.dist)} min</small>`) : '–'}</td>
@@ -84,8 +84,8 @@ export function buildReportHtml(place, ev, layers, { time, distMode }) {
   <div class="facts">
     <p class="fazit">${esc(summarize(ev.parts))}</p>
     ${place.rent ? `Kaltmiete <b>${place.rent} €</b>${place.size ? ` · ${place.size} m² · <b>${ppsqm} €/m²</b>` : ''}<br>` : ''}
-    ${broken.length ? `<span class="bad">Ausgeschlossen durch: ${broken.map((p) => esc(p.module.name)).join(', ')}</span><br>` : ''}
-    ${lost.length ? `Abzüge: ${lost.slice(0, 5).map((l) => `${esc(l.part.module.name)} −${Math.round(l.lost * 100)}`).join(' · ')}` : ev.score != null ? 'Alle Kriterien voll erfüllt.' : ''}
+    ${broken.length ? `<span class="bad">Ausgeschlossen durch: ${broken.map((p) => esc(modLabel(p.module))).join(', ')}</span><br>` : ''}
+    ${lost.length ? `Abzüge: ${lost.slice(0, 5).map((l) => `${esc(modLabel(l.part.module))} −${Math.round(l.lost * 100)}`).join(' · ')}` : ev.score != null ? 'Alle Kriterien voll erfüllt.' : ''}
   </div>
 </div>
 <h2>Kriterien</h2>

@@ -14,6 +14,9 @@ export function formatDist(m) {
 }
 
 /** Wert eines Kriteriums formatieren – Meter oder (bei Zielen) Minuten. */
+/** „🏪 Späti / Kiosk“ – Name mit Symbol, wo vorhanden. */
+export const modLabel = (m) => (m?.icon ? `${m.icon} ${m.name}` : m?.name ?? '');
+
 export function fmtValue(module, v) {
   if (module?.unit === 'min') return Number.isFinite(v) ? `${Math.round(v)} min` : '–';
   if (module?.unit === '%') return Number.isFinite(v) ? `${Math.round(v)} %` : '–';
@@ -38,7 +41,7 @@ export function poiPopup(module, el, time) {
   if (web) rows.push(`<tr><td>Web</td><td><a href="${esc(web)}" target="_blank" rel="noopener noreferrer">${esc(web)}</a></td></tr>`);
   const [type, id] = el.type ? [el.type, el.id] : String(el.id).split('/');
   return `<div class="report">
-    <strong>${esc(labelOf(t, module.name))}</strong><br><small>${esc(module.name)}</small>
+    <strong>${esc(labelOf(t, module.name))}</strong><br><small>${esc(modLabel(module))}</small>
     <table>${rows.join('')}</table>
     <a href="https://www.openstreetmap.org/${esc(type)}/${esc(id)}" target="_blank" rel="noopener">in OSM ansehen</a>
   </div>`;
@@ -61,7 +64,7 @@ export function reportPopup({ parts, score }, latlng, { walk = false } = {}) {
       const k = settings.mode === 'near' ? settings.minCount || 1 : 1;
       const goal = `${k > 1 ? `${k}× ` : ''}${settings.mode === 'far' ? '≥' : '≤'} ${fmtValue(module, settings.distance)}`;
       const how = walk && !isMin && module.geometry !== 'line' && settings.mode !== 'far' ? '🚶' : '';
-      return `<tr><td>${icon}</td><td>${esc(module.name)}${what ? `<br><small>${what}</small>` : ''}</td><td>${how}${d}<br><small>Ziel ${goal}</small></td></tr>`;
+      return `<tr><td>${icon}</td><td>${esc(modLabel(module))}${what ? `<br><small>${what}</small>` : ''}</td><td>${how}${d}<br><small>Ziel ${goal}</small></td></tr>`;
     })
     .join('');
   const total = score == null ? '<span class="bad">Pflichtkriterium verletzt</span>' : `${Math.round(score * 100)} %`;
@@ -89,12 +92,12 @@ export function lostPoints(parts) {
 
 function explain(parts, score) {
   if (score == null) {
-    const broken = parts.filter((p) => p.required && !p.satisfied).map((p) => esc(p.module.name));
+    const broken = parts.filter((p) => p.required && !p.satisfied).map((p) => esc(modLabel(p.module)));
     return `<p class="why bad">Ausgeschlossen durch: ${broken.join(', ')}</p>`;
   }
   const lost = lostPoints(parts).filter((l) => l.lost >= 0.005).slice(0, 3);
   if (!lost.length) return '';
-  return `<p class="why">Abzug: ${lost.map((l) => `<b>−${Math.round(l.lost * 100)}</b> ${esc(l.part.module.name)}`).join(' · ')}</p>`;
+  return `<p class="why">Abzug: ${lost.map((l) => `<b>−${Math.round(l.lost * 100)}</b> ${esc(modLabel(l.part.module))}`).join(' · ')}</p>`;
 }
 
 /**
@@ -107,11 +110,11 @@ export function summarize(parts) {
     .filter((p) => p.satisfied && p.weight > 0 && p.settings.mode === 'near' && p.hit)
     .sort((a, b) => b.weight - a.weight || a.dist / a.settings.distance - b.dist / b.settings.distance)
     .slice(0, 3)
-    .map((p) => `${p.module.name} ${val(p)}`);
+    .map((p) => `${modLabel(p.module)} ${val(p)}`);
   const bad = parts
     .filter((p) => !p.satisfied && (p.weight > 0 || p.required))
     .sort((a, b) => Number(b.required) - Number(a.required) || b.weight * (1 - b.score) - a.weight * (1 - a.score))
     .slice(0, 3)
-    .map((p) => `${p.module.name} ${val(p)} (Ziel ${p.settings.mode === 'far' ? '≥' : '≤'} ${fmtValue(p.module, p.settings.distance)})`);
+    .map((p) => `${modLabel(p.module)} ${val(p)} (Ziel ${p.settings.mode === 'far' ? '≥' : '≤'} ${fmtValue(p.module, p.settings.distance)})`);
   return [good.length && `Stark: ${good.join(' · ')}.`, bad.length && `Schwach: ${bad.join(' · ')}.`].filter(Boolean).join(' ') || 'Keine Kriterien aktiv.';
 }

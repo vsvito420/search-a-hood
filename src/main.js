@@ -22,6 +22,8 @@ import { poiPopup, reportPopup, formatDist, esc, summarize } from './ui/popups.j
 import { OverlayManager } from './ui/overlays.js';
 import { renderCandidateTable, sortValue } from './ui/candidates.js';
 import { createPalette } from './ui/palette.js';
+import { applyIcons } from './ui/icons.js';
+import { createSheet } from './ui/sheet.js';
 import { buildReportHtml, openReport } from './ui/report.js';
 import { osrmField, transitField, transitReach, CommuteIndex, COMMUTE_MODES, nextWorkday } from './core/commute.js';
 import { ShareField, ShareIndex } from './core/share.js';
@@ -98,20 +100,39 @@ const dataModules = () => enabledModules().filter((m) => m.kind !== 'target');
 // =====================================================================
 const view = fromLink?.view || store.get('view', { center: [52.52, 13.405], zoom: 14 });
 if (!Array.isArray(view.center) && view.center) view.center = [view.center.lat, view.center.lng];
-const map = L.map('map', { preferCanvas: true, zoomControl: true }).setView(view.center, view.zoom);
-const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-}).addTo(map);
-const light = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  maxZoom: 20,
-  attribution: '© OpenStreetMap, © CARTO',
-});
-const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-  maxZoom: 20,
-  attribution: '© OpenStreetMap, © CARTO',
-});
-L.control.layers({ 'OSM Standard': osm, 'Hell (CARTO)': light, 'Dunkel (CARTO)': dark }, {}, { position: 'bottomright' }).addTo(map);
+const map = L.map('map', { preferCanvas: true, zoomControl: false, tapHold: true }).setView(view.center, view.zoom);
+// Alle Grundkarten nutzen die OSM-Standardkacheln (kein API-Key nötig – CARTO verlangt inzwischen einen).
+// Hell, Dunkel und Cyber entstehen per CSS-Filter (.tiles-light/.tiles-dark/.cyber-tiles in styles.css).
+const osmTiles = (className) =>
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    className,
+  });
+const osm = osmTiles('').addTo(map);
+const light = osmTiles('tiles-light');
+const dark = osmTiles('tiles-dark');
+const cyber = osmTiles('cyber-tiles');
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+L.control.layers({ 'OSM Standard': osm, 'Hell (grau)': light, Dunkel: dark, '⚡ Cyber': cyber }, {}, { position: 'bottomright' }).addTo(map);
+let baseBeforeCyber = osm;
+/** Cyber-Modus: Neon-Karte + passende UI (body.cyber). Merkt sich die vorige Grundkarte. */
+function setCyber(on) {
+  document.body.classList.toggle('cyber', on);
+  document.getElementById('cyber-btn')?.setAttribute('aria-pressed', String(on));
+  store.set('cyber', on);
+  const bases = [osm, light, dark, cyber];
+  if (on && !map.hasLayer(cyber)) {
+    baseBeforeCyber = bases.find((b) => map.hasLayer(b)) || osm;
+    bases.forEach((b) => map.removeLayer(b));
+    cyber.addTo(map);
+  } else if (!on && map.hasLayer(cyber)) {
+    map.removeLayer(cyber);
+    (baseBeforeCyber === cyber ? osm : baseBeforeCyber).addTo(map);
+  }
+}
+map.on('baselayerchange', (e) => setCyber(e.layer === cyber));
+if (store.get('cyber', false)) setCyber(true);
 L.control.scale({ imperial: false }).addTo(map);
 map.on('moveend', () => store.set('view', { center: map.getCenter(), zoom: map.getZoom() }));
 if (fromLink) history.replaceState(null, '', location.pathname + location.search);
@@ -128,10 +149,16 @@ let isoLayer = null;
 // =====================================================================
 const $ = (s) => document.querySelector(s);
 const statusEl = $('#status');
+let statusTimer = 0;
 function setStatus(msg, isError = false) {
   statusEl.textContent = msg;
   statusEl.classList.toggle('error', isError);
+  // Hinweise blenden nach ein paar Sekunden aus (Text bleibt für Screenreader erhalten), Fehler bleiben stehen
+  statusEl.classList.remove('faded');
+  clearTimeout(statusTimer);
+  if (!isError) statusTimer = setTimeout(() => statusEl.classList.add('faded'), 7000);
 }
+statusEl.addEventListener('mouseenter', () => statusEl.classList.remove('faded'));
 
 // Tabs
 const tabs = [...document.querySelectorAll('[data-tab]')];
@@ -140,7 +167,16 @@ function showTab(name) {
   for (const p of document.querySelectorAll('[data-panel]')) p.hidden = p.dataset.panel !== name;
   store.set('tab', name);
 }
-tabs.forEach((t) => t.addEventListener('click', () => showTab(t.dataset.tab)));
+// Mobil: Seitenleiste als Bottom Sheet (Apple-Karten-Stil)
+const sheet = createSheet($('#sidebar'), $('#sheet-handle'), {
+  onChange: () => map && setTimeout(() => map.invalidateSize({ pan: false }), 0),
+});
+tabs.forEach((t) =>
+  t.addEventListener('click', () => {
+    showTab(t.dataset.tab);
+    sheet.expand('half'); // Tab antippen im eingeklappten Sheet → Inhalt zeigen
+  }),
+);
 showTab(store.get('tab', 'criteria'));
 
 // Zeitpunkt
@@ -301,13 +337,53 @@ relBox.addEventListener('change', () => {
   if (state.lastResult) drawHeatmap(state.lastResult);
 });
 $('#analyze-btn').addEventListener('click', () => analyze());
-$('#results-close').addEventListener('click', () => ($('#results').hidden = true));
+// Top-Lagen ein-/ausklappen (mobil standardmäßig eingeklappt, damit die Karte frei bleibt)
+function setResultsCollapsed(c) {
+  $('#results').classList.toggle('collapsed', c);
+  $('#results-toggle').setAttribute('aria-expanded', String(!c));
+  store.set('resultsCollapsed', c);
+}
+setResultsCollapsed(store.get('resultsCollapsed', matchMedia('(max-width: 800px)').matches));
+$('#results-toggle').addEventListener('click', () => setResultsCollapsed(!$('#results').classList.contains('collapsed')));
 $('#iso-btn').addEventListener('click', () => drawIsochrone());
+// Karte frei bewegen: Ein normaler Klick/Tipp öffnet nichts. Report per Rechtsklick / langem Tippen
+// (Leaflet meldet beides als „contextmenu“) oder im Prüfmodus per Klick.
+let inspectMode = store.get('inspect', false);
+function setInspect(on) {
+  inspectMode = on;
+  store.set('inspect', on);
+  $('#inspect-btn').setAttribute('aria-pressed', String(on));
+  map.getContainer().classList.toggle('inspecting', on);
+}
+setInspect(inspectMode);
+$('#inspect-btn').addEventListener('click', () => {
+  setInspect(!inspectMode);
+  setStatus(inspectMode ? '🎯 Prüfmodus an: Klick auf die Karte öffnet den Standort-Report.' : 'Prüfmodus aus: Karte frei bewegen. Report per Rechtsklick oder langem Tippen.');
+});
+function inspectAt(latlng) {
+  state.lastClick = latlng;
+  showReport(latlng);
+}
 map.on('click', (e) => {
   if (e.originalEvent.shiftKey) return addCandidateAt(e.latlng);
-  state.lastClick = e.latlng;
-  showReport(e.latlng);
+  if (inspectMode) inspectAt(e.latlng);
 });
+map.on('contextmenu', (e) => {
+  e.originalEvent.preventDefault?.();
+  inspectAt(e.latlng);
+});
+
+// Seitenleiste einklappen → mehr Platz für die Karte
+function setSidebar(collapsed) {
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  $('#sidebar-btn').setAttribute('aria-pressed', String(collapsed));
+  store.set('sidebarCollapsed', collapsed);
+  // Leaflet muss die neue Größe kennen, sonst bleiben graue Kachel-Lücken
+  setTimeout(() => map.invalidateSize(), 220);
+}
+setSidebar(store.get('sidebarCollapsed', false));
+$('#sidebar-btn').addEventListener('click', () => setSidebar(!document.body.classList.contains('sidebar-collapsed')));
+new ResizeObserver(() => map.invalidateSize()).observe($('#map-wrap'));
 
 // Overlays
 const overlays = new OverlayManager(map, store, setStatus);
@@ -412,6 +488,7 @@ function drawTargets() {
   }
 }
 
+if (state.targets.length) $('#targets-box').open = true;
 $('#target-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
@@ -649,7 +726,12 @@ function drawMarkers(m, s, elements) {
       L.circle([lat, lon], { radius: s.distance, color: '#d7301f', weight: 1, fillOpacity: 0.08, interactive: false }).addTo(group);
     }
     L.circleMarker([lat, lon], { radius: 5, color: '#fff', weight: 1, fillColor: m.color, fillOpacity: 0.95 })
-      .bindPopup(() => poiPopup(m, el, state.time))
+      .on('click', (ev) => {
+        L.DomEvent.stopPropagation(ev);
+        const box = document.createElement('div');
+        box.innerHTML = poiPopup(m, el, state.time);
+        presentAt(L.latLng(lat, lon), box, m.icon ? `${m.icon} ${m.name}` : m.name);
+      })
       .addTo(group);
   }
   group.addTo(map);
@@ -726,9 +808,49 @@ function evaluate(lat, lon) {
   return evaluatePoint(lat, lon, [...state.layers.values()]);
 }
 
+// ---------- Inhalte zu einem Ort zeigen: Desktop als Popup, mobil im Bottom Sheet ----------
+const pinLayer = L.layerGroup().addTo(map);
+function closeSheetReport() {
+  $('#sheet-report').hidden = true;
+  $('#sheet-report-body').innerHTML = '';
+  pinLayer.clearLayers();
+  document.body.classList.remove('report-open');
+}
+$('#sheet-report-close').addEventListener('click', () => (closeSheetReport(), sheet.set('peek')));
+
+/**
+ * @param {L.LatLng} latlng
+ * @param {HTMLElement} content
+ * @returns {{update: () => void, isOpen: () => boolean}}
+ */
+function presentAt(latlng, content, title = 'Standort-Report') {
+  if (!sheet.isMobile) {
+    const popup = L.popup({ maxWidth: 380 }).setLatLng(latlng).setContent(content).openOn(map);
+    return { update: () => popup.update(), isOpen: () => popup.isOpen() };
+  }
+  map.closePopup();
+  $('#sheet-report h2').textContent = title;
+  const body = $('#sheet-report-body');
+  body.replaceChildren(content);
+  $('#sheet-report').hidden = false;
+  document.body.classList.add('report-open');
+  sheet.expand('half');
+  $('#sidebar').scrollTop = 0;
+  // Pin setzen und den Ort in den freien Kartenbereich über dem Sheet schieben
+  pinLayer.clearLayers();
+  L.marker(latlng, { icon: L.divIcon({ className: 'pin-icon', html: '<span></span>', iconSize: [28, 36], iconAnchor: [14, 34] }), interactive: false }).addTo(pinLayer);
+  requestAnimationFrame(() => {
+    const size = map.getSize();
+    const sheetH = $('#sidebar').getBoundingClientRect().height;
+    const p = map.latLngToContainerPoint(latlng);
+    map.panBy([p.x - size.x / 2, p.y - Math.max(90, (size.y - sheetH) / 2 + 20)], { animate: true });
+  });
+  return { update: () => {}, isOpen: () => body.contains(content) };
+}
+
 async function showReport(latlng) {
   if (!state.layers.size) {
-    setStatus('Erst „Sichtbares Gebiet analysieren“ klicken.');
+    setStatus('Erst das Gebiet analysieren (🔍 oder Taste A).');
     return;
   }
   const r = evaluate(latlng.lat, latlng.lng);
@@ -744,12 +866,15 @@ async function showReport(latlng) {
       <a href="https://www.openstreetmap.org/?mlat=${latlng.lat}&mlon=${latlng.lng}#map=18/${latlng.lat}/${latlng.lng}" target="_blank" rel="noopener">OSM</a>
     </div>
     <div class="fi-wrap"></div>`;
-  const popup = L.popup({ maxWidth: 380 }).setLatLng(latlng).setContent(html).openOn(map);
-  const el = popup.getElement();
+  const el = document.createElement('div');
+  el.className = 'report-wrap';
+  el.innerHTML = html;
+  const popup = presentAt(latlng, el);
   el.querySelector('[data-act="iso"]').addEventListener('click', () => drawIsochrone(latlng));
   el.querySelector('[data-act="transit-iso"]').addEventListener('click', () => drawTransitIsochrone(latlng));
   el.querySelector('[data-act="cand"]').addEventListener('click', () => {
     map.closePopup();
+    closeSheetReport();
     addCandidateAt(latlng);
   });
   el.querySelector('[data-act="report"]').addEventListener('click', () => {
@@ -768,9 +893,15 @@ async function showReport(latlng) {
 // =====================================================================
 // Isochrone
 // =====================================================================
-async function drawIsochrone(latlng = state.lastClick) {
-  if (!latlng) return setStatus('Erst auf die Karte klicken, dann Isochrone.', true);
+/** Mobil: Report schließen und Sheet einklappen, damit das Ergebnis auf der Karte sichtbar ist. */
+function revealMap() {
   map.closePopup();
+  if (sheet.isMobile) (closeSheetReport(), sheet.set('peek'));
+}
+
+async function drawIsochrone(latlng = state.lastClick) {
+  if (!latlng) return setStatus('Erst einen Punkt prüfen (Rechtsklick / lange tippen oder 🎯), dann Isochrone.', true);
+  revealMap();
   // Vorhandenes Netz nutzen, wenn der Punkt mit 15-min-Radius hineinpasst, sonst kleines Gebiet um den Punkt laden.
   const around = padBbox({ south: latlng.lat, west: latlng.lng, north: latlng.lat, east: latlng.lng }, 1300);
   const contains = (slot) => {
@@ -814,7 +945,7 @@ async function drawIsochrone(latlng = state.lastClick) {
  * Zeitpunkt), plus der Fußweg-Radius, der von der Restzeit übrig bleibt.
  */
 async function drawTransitIsochrone(latlng, maxMinutes = 30) {
-  map.closePopup();
+  revealMap();
   const when = state.time < new Date() ? new Date() : state.time;
   setStatus(`🚆 Berechne ÖPNV-Erreichbarkeit ab Abfahrt ${when.toLocaleString('de-DE', { weekday: 'short', hour: '2-digit', minute: '2-digit' })} …`);
   let stops;
@@ -943,10 +1074,10 @@ function openCandidateReport(c) {
   if (state.layers.size && inBbox(state.bbox, c.lat, c.lon)) return showReport(latlng);
   const ev = state.candEval?.byKey.get(candKey(c));
   if (!ev) return setStatus('Noch nicht bewertet – „⚖ Alle einzeln bewerten“ oder Gebiet analysieren.');
-  L.popup({ maxWidth: 380 })
-    .setLatLng(latlng)
-    .setContent(`<p class="hint">${esc(c.display || c.label)} · Einzelbewertung</p>${reportPopup(ev, latlng)}`)
-    .openOn(map);
+  const el = document.createElement('div');
+  el.className = 'report-wrap';
+  el.innerHTML = `<p class="hint">${esc(c.display || c.label)} · Einzelbewertung</p>${reportPopup(ev, latlng)}`;
+  presentAt(latlng, el);
 }
 
 function addCandidateAt(latlng) {
@@ -1206,7 +1337,7 @@ const palette = createPalette($('#palette'), () => [
   { label: '🚶 Entfernung: echte Fußwege', hint: 'W', run: () => setDistMode('walk') },
   { label: '📏 Entfernung: Luftlinie', hint: 'W', run: () => setDistMode('air') },
   { label: '⏱ Isochrone am letzten Klickpunkt', hint: 'I', run: () => drawIsochrone() },
-  { label: '🚆 ÖPNV-Isochrone (30 min) am letzten Klickpunkt', run: () => (state.lastClick ? drawTransitIsochrone(state.lastClick) : setStatus('Erst auf die Karte klicken.', true)) },
+  { label: '🚆 ÖPNV-Isochrone (30 min) am letzten Klickpunkt', run: () => (state.lastClick ? drawTransitIsochrone(state.lastClick) : setStatus('Erst einen Punkt prüfen (Rechtsklick / lange tippen).', true)) },
   { label: '🎚 Relative Farbskala an/aus', hint: 'R', run: () => relBox.click() },
   { label: '📅 Wochen-Zeitraffer', hint: 'T', run: () => toggleTimeline(true) },
   { label: '📍 Standort-Check „Hier“ (GPS)', hint: 'H', run: () => checkHere() },
@@ -1218,7 +1349,7 @@ const palette = createPalette($('#palette'), () => [
   ...Object.entries(TIME_PRESETS).map(([k, fn]) => ({ label: `🕒 Zeitpunkt: ${document.querySelector(`[data-time="${k}"]`).textContent}`, run: () => setTime(fn()) })),
   ...PRESETS.map((p) => ({ label: `Preset: ${p.name}`, hint: p.description, run: () => applyPreset(p) })),
   ...state.modules.map((m) => ({
-    label: `${state.settings[m.id].enabled ? '☑' : '☐'} ${m.name}`,
+    label: `${state.settings[m.id].enabled ? '☑' : '☐'} ${m.icon || ''} ${m.name}`,
     hint: `Modul ${state.settings[m.id].enabled ? 'deaktivieren' : 'aktivieren'} · ${m.category}`,
     run: () => {
       state.settings[m.id].enabled = !state.settings[m.id].enabled;
@@ -1231,7 +1362,7 @@ const palette = createPalette($('#palette'), () => [
     .map((c, i) => ({ c, i }))
     .filter(({ c }) => c.lat != null)
     .map(({ c, i }) => ({ label: `★ ${i + 1}. ${c.label}`, hint: 'Kandidat anzeigen', run: () => (showTab('candidates'), map.setView([c.lat, c.lon], 17), state.layers.size && showReport(L.latLng(c.lat, c.lon))) })),
-  ...['criteria', 'candidates', 'layers', 'dev'].map((t, i) => ({ label: `Tab: ${tabs[i].textContent.trim()}`, hint: String(i + 1), run: () => showTab(t) })),
+  ...['criteria', 'candidates', 'layers', 'dev'].map((t, i) => ({ label: `Tab: ${tabs[i].getAttribute('aria-label')}`, hint: String(i + 1), run: () => showTab(t) })),
 ]);
 $('#palette-btn').addEventListener('click', () => palette.open());
 
@@ -1247,16 +1378,21 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'w') setDistMode(state.distMode === 'walk' ? 'air' : 'walk');
   else if (k === 'i') drawIsochrone();
   else if (k === 'r') relBox.click();
+  else if (k === 'p') $('#inspect-btn').click();
+  else if (k === 'b') $('#sidebar-btn').click();
   else if (k === 't') toggleTimeline();
   else if (k === 'h') checkHere();
+  else if (k === 'c') setCyber(!document.body.classList.contains('cyber'));
   else if (k === ' ' && !tl.el.hidden) (e.preventDefault(), togglePlay());
-  else if (k === 'escape') map.closePopup();
+  else if (k === 'escape') (map.closePopup(), closeSheetReport());
   else if (/^[1-4]$/.test(k)) showTab(['criteria', 'candidates', 'layers', 'dev'][+k - 1]);
 });
 
 // =====================================================================
 // Start
 // =====================================================================
+applyIcons();
+
 // Erste Schritte beim ersten Besuch (nicht bei Permalink/Deep-Link)
 if (!store.get('welcomed', false) && !fromLink && !location.search) {
   $('#welcome').hidden = false;
@@ -1269,7 +1405,7 @@ if (!store.get('welcomed', false) && !fromLink && !location.search) {
 refreshPanel();
 renderCandidates();
 drawTargets();
-setStatus(fromLink ? 'Permalink geladen – „analysieren“ drücken (A).' : 'Viertel wählen, Preset oder Module einstellen, dann „analysieren“ (A). ⌘K für alles andere.');
+setStatus(fromLink ? 'Permalink geladen – 🔍 drücken (A).' : 'Viertel wählen, Preset wählen, dann 🔍 (A). Report: Rechtsklick / lange tippen. ⌘K für alles andere.');
 const showEngine = () => ($('#hours-engine').textContent = hoursEngine());
 showEngine();
 loadHoursLib().then((ok) => (showEngine(), ok && scheduleRebuild()));
@@ -1296,6 +1432,7 @@ function checkHere() {
   );
 }
 $('#here-btn').addEventListener('click', checkHere);
+$('#cyber-btn').addEventListener('click', () => setCyber(!document.body.classList.contains('cyber')));
 
 // ---------- Deep-Links: ?addr=…&at=lat,lon&z=16&preset=informatiker&walk=1&time=2026-10-02T23:00&run=1
 async function applyQueryParams() {

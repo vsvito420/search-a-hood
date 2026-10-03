@@ -71,12 +71,24 @@ export const BUILTIN_MODULES = [
   railNoise,
 ];
 
+/** Symbol je Modul – für die Liste, den Report und die Befehlspalette. */
+export const MODULE_ICONS = {
+  'fuel-247': '⛽', spaeti: '🏪', 'late-food': '🥙', supermarket: '🛒', bakery: '🥐', parcel: '📦',
+  atm: '🏧', laundry: '🧺', pharmacy: '💊', doctors: '🩺', hospital: '🏥', 'transit-rail': '🚇',
+  'transit-bus': '🚌', carsharing: '🚲', 'ev-charging': '🔌', fibre: '🌐', 'cell-tower': '📡',
+  'public-wifi': '📶', coworking: '💻', hackerspace: '🛠️', 'club-mate': '🧉', electronics: '🖥️',
+  park: '🌳', 'green-share': '🌿', gym: '🏋️', cinema: '🎬', library: '📚', 'school-kita': '🏫',
+  bubatz: '🥦', 'bubatz-pedestrian': '🚶', 'nightlife-noise': '🍻', 'road-noise': '🛣️', 'rail-noise': '🚆',
+};
+for (const m of BUILTIN_MODULES) m.icon = MODULE_ICONS[m.id] || '📍';
+
 /** Eigene Module aus der UI (JSON) in echte Module umwandeln. */
 export function customModule({ id, name, query, color, supportsHours, geometry }) {
   return defineModule({
     id,
     name,
     category: 'Eigene Module',
+    icon: '🧩',
     color: color || '#34495e',
     query: Array.isArray(query) ? query : [query],
     supportsHours: !!supportsHours,
@@ -91,11 +103,12 @@ export function targetModule(t) {
   const m = COMMUTE_MODES[t.mode] || COMMUTE_MODES.bike;
   return defineModule({
     id: `target-${t.id}`,
-    name: `${m.icon} ${t.name}`,
+    name: t.name,
     category: 'Meine Ziele',
     color: '#e91e63',
     description: `${m.label} zu „${t.name}“${t.mode === 'transit' ? `, Ankunft werktags ${t.arrive || '08:30'}` : ''}. Quelle: ${t.mode === 'transit' ? 'Transitous (MOTIS)' : 'FOSSGIS-OSRM'}.`,
     kind: 'target',
+    icon: m.icon,
     unit: 'min',
     target: t,
     custom: true,
